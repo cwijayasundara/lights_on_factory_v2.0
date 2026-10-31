@@ -82,4 +82,5 @@ export function installCloudProfile(options: InstallOptions): void {
   copySetup(options.factoryRoot, options.target)
   ensureStartupHook(options.target)
   writeProvenance(options.target, source, pin)
+  fs.rmSync(path.join(options.target, '.rig/.gate'), { force: true })
 }

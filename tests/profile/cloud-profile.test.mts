@@ -65,6 +65,7 @@ test('a fresh install resolves hooks and skills without the plugin root', async 
   run('git', ['init'], { cwd: target })
   await installInto(target)
   await installInto(target)
+  assert.equal(fs.existsSync(path.join(target, '.rig/.gate')), false)
   const commands = hookCommands(target)
   assert.ok(commands.length > 0)
   for (const command of commands) {
