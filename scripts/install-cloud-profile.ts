@@ -169,3 +169,23 @@ export function installCloudProfile(options: InstallOptions): void {
   writeProvenance(options.target, source, pin)
   fs.rmSync(path.join(options.target, '.rig/.gate'), { force: true })
 }
+
+function main(argv: string[]): number {
+  const [target] = argv
+  if (!target) {
+    process.stderr.write('usage: node scripts/install-cloud-profile.ts <target-repo>\n')
+    return 2
+  }
+  const factoryRoot = path.resolve(import.meta.dirname, '..')
+  try {
+    installCloudProfile({ target, factoryRoot })
+    const pin = readPin(factoryRoot)
+    process.stdout.write(`installed Rig ${pin.version} (${pin.commit.slice(0, 7)}) into ${path.resolve(target)}\n`)
+    return 0
+  } catch (error) {
+    process.stderr.write(`${(error as Error).message}\n`)
+    return 1
+  }
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === import.meta.filename) process.exitCode = main(process.argv.slice(2))

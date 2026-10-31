@@ -305,6 +305,23 @@ test('B6: a clean RIG_SOURCE checkout at the pin is vendored without touching th
   }
 })
 
+test('CLI: install-cloud-profile.ts <target> installs into the target and refuses the factory itself', () => {
+  const script = path.join(repoRoot, 'scripts/install-cloud-profile.ts')
+  const node = [process.execPath, '--disable-warning=ExperimentalWarning', script]
+  const target = tmp('rig-cli-')
+  run('git', ['init'], { cwd: target })
+  const ok = run(node[0], [...node.slice(1), target], { env: { ...process.env, RIG_SOURCE: '' } })
+  assert.equal(ok.status, 0, ok.stderr)
+  assert.equal(fs.existsSync(path.join(target, '.rig/bin/sdlc.ts')), true)
+  assert.match(ok.stdout, /installed Rig 0\.7\.0/)
+  const self = run(node[0], [...node.slice(1), repoRoot])
+  assert.equal(self.status, 1)
+  assert.match(self.stderr, /factory repository itself/)
+  const none = run(node[0], node.slice(1))
+  assert.equal(none.status, 2)
+  assert.match(none.stderr, /usage/i)
+})
+
 test('B13: a missing checker and a forbidden edit both fail visibly', async () => {
   const target = tmp('rig-profile-')
   run('git', ['init'], { cwd: target })
