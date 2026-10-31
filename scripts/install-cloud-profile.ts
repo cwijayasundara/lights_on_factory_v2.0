@@ -1,38 +1,121 @@
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 
 export type InstallOptions = {
-  rigRepo: string
   target: string
   factoryRoot: string
+  // undefined reads RIG_SOURCE; null forces the pinned fetch/cache.
+  rigSource?: string | null
+  cacheRoot?: string
 }
 
-type Pin = { repository: string; commit: string; version: string }
+export type Pin = { repository: string; commit: string; version: string }
+
+const FETCH_TIMEOUT_MS = 120_000
 
 function fail(message: string): never {
   throw new Error(message)
 }
 
 function readPin(factoryRoot: string): Pin {
-  return JSON.parse(fs.readFileSync(path.join(factoryRoot, 'cloud/rig-profile/pin.json'), 'utf8')) as Pin
+  const raw = JSON.parse(fs.readFileSync(path.join(factoryRoot, 'cloud/rig-profile/pin.json'), 'utf8')) as Partial<Pin>
+  return { repository: raw.repository ?? '', commit: raw.commit ?? '', version: raw.version ?? '' }
 }
 
-function materialize(rigRepo: string, commit: string): string {
-  const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-pin-'))
-  const archive = spawnSync('git', ['-C', rigRepo, 'archive', commit], { maxBuffer: 128 * 1024 * 1024 })
-  if (archive.status !== 0) fail(`could not archive ${commit} from ${rigRepo}: ${archive.stderr.toString()}`)
-  const extract = spawnSync('tar', ['-x', '-C', dest], { input: archive.stdout })
-  if (extract.status !== 0) fail(`could not extract ${commit}: ${extract.stderr.toString()}`)
-  return dest
+function validatePin(pin: Pin): void {
+  if (!pin.repository) fail('pin repository is empty')
+  if (!/^[0-9a-f]{40}$/.test(pin.commit)) fail(`pin commit must be a 40-character hex SHA, got "${pin.commit}"`)
+}
+
+function git(cwd: string, args: string[]): string {
+  const result = spawnSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    timeout: FETCH_TIMEOUT_MS,
+  })
+  if (result.error) throw result.error
+  if (result.status !== 0) throw new Error(result.stderr.trim() || `git ${args[0]} exited ${result.status}`)
+  return result.stdout.trim()
+}
+
+// HEAD of the checkout rooted exactly at dir, or null when dir is not the root of a git checkout.
+function checkoutHead(dir: string): string | null {
+  try {
+    if (fs.realpathSync(git(dir, ['rev-parse', '--show-toplevel'])) !== fs.realpathSync(dir)) return null
+    return git(dir, ['rev-parse', 'HEAD'])
+  } catch {
+    return null
+  }
+}
+
+function useLocalCheckout(pin: Pin, rigSource: string): string {
+  const dir = path.resolve(rigSource)
+  const head = checkoutHead(dir)
+  if (!head) fail(`RIG_SOURCE ${dir} is not the root of a git checkout`)
+  if (head !== pin.commit) fail(`RIG_SOURCE ${dir} is at ${head}, but the pin is ${pin.commit}`)
+  if (git(dir, ['status', '--porcelain', '--untracked-files=all']) !== '') {
+    fail(`RIG_SOURCE ${dir} has uncommitted changes or untracked files`)
+  }
+  return dir
+}
+
+function checkCache(cache: string, pin: Pin): string {
+  const head = checkoutHead(cache)
+  if (head !== pin.commit) {
+    fail(`Rig cache ${cache} is at ${head ?? 'no commit'}, expected the pinned commit ${pin.commit}; delete it and retry`)
+  }
+  return cache
+}
+
+function fetchIntoCache(pin: Pin, cacheRoot: string, cache: string): string {
+  fs.mkdirSync(cacheRoot, { recursive: true })
+  const temp = fs.mkdtempSync(path.join(cacheRoot, '.tmp-'))
+  try {
+    git(temp, ['init', '-q'])
+    git(temp, ['fetch', '-q', '--depth', '1', pin.repository, pin.commit])
+    git(temp, ['checkout', '-q', '--detach', 'FETCH_HEAD'])
+    if (git(temp, ['rev-parse', 'HEAD']) !== pin.commit) fail('fetched HEAD does not match the pin')
+  } catch (error) {
+    fs.rmSync(temp, { recursive: true, force: true })
+    fail(`could not fetch Rig ${pin.commit} from ${pin.repository}: ${(error as Error).message}`)
+  }
+  try {
+    fs.renameSync(temp, cache)
+  } catch (error) {
+    fs.rmSync(temp, { recursive: true, force: true })
+    // Another install won the race; accept its cache only if it is at the pin.
+    if (!fs.existsSync(cache)) throw error
+  }
+  return checkCache(cache, pin)
+}
+
+export function resolveRigSource(pin: Pin, options: { rigSource: string | null; cacheRoot: string }): string {
+  validatePin(pin)
+  if (options.rigSource) return useLocalCheckout(pin, options.rigSource)
+  const cache = path.join(path.resolve(options.cacheRoot), pin.commit)
+  if (fs.existsSync(cache)) return checkCache(cache, pin)
+  return fetchIntoCache(pin, path.resolve(options.cacheRoot), cache)
+}
+
+function realish(p: string): string {
+  const resolved = path.resolve(p)
+  return fs.existsSync(resolved) ? fs.realpathSync(resolved) : resolved
+}
+
+function refuseFactoryAsTarget(factoryRoot: string, target: string): void {
+  const root = realish(factoryRoot)
+  const into = realish(target)
+  if (into === root || into.startsWith(root + path.sep)) {
+    fail(`refusing to install the Rig profile into the factory repository itself (${into}); the factory is never a Rig target`)
+  }
 }
 
 function copySetup(factoryRoot: string, target: string): void {
-  const from = path.join(factoryRoot, 'cloud/environment-setup.sh')
   const to = path.join(target, 'cloud/environment-setup.sh')
   fs.mkdirSync(path.dirname(to), { recursive: true })
-  if (path.resolve(from) !== path.resolve(to)) fs.copyFileSync(from, to)
+  fs.copyFileSync(path.join(factoryRoot, 'cloud/environment-setup.sh'), to)
   fs.chmodSync(to, 0o755)
 }
 
@@ -45,12 +128,11 @@ function ensureStartupHook(target: string): void {
   settings.hooks ??= {}
   settings.hooks.SessionStart ??= []
   const present = settings.hooks.SessionStart.some(group => group.hooks.some(hook => hook.command === command))
-  if (!present) {
-    settings.hooks.SessionStart.unshift({
-      matcher: 'startup|resume|clear|compact',
-      hooks: [{ type: 'command', command, timeout: 30 }],
-    })
-  }
+  if (present) return
+  settings.hooks.SessionStart.unshift({
+    matcher: 'startup|resume|clear|compact',
+    hooks: [{ type: 'command', command, timeout: 30 }],
+  })
   fs.writeFileSync(file, `${JSON.stringify(settings, null, 2)}\n`)
 }
 
@@ -63,8 +145,11 @@ function writeProvenance(target: string, source: string, pin: Pin): void {
 }
 
 export function installCloudProfile(options: InstallOptions): void {
+  refuseFactoryAsTarget(options.factoryRoot, options.target)
   const pin = readPin(options.factoryRoot)
-  const source = materialize(options.rigRepo, pin.commit)
+  const rigSource = options.rigSource === undefined ? process.env.RIG_SOURCE || null : options.rigSource
+  const cacheRoot = options.cacheRoot ?? path.join(options.factoryRoot, '.cache/rig')
+  const source = resolveRigSource(pin, { rigSource, cacheRoot })
   const plugin = JSON.parse(fs.readFileSync(path.join(source, '.claude-plugin/plugin.json'), 'utf8')) as { version?: string }
   if (plugin.version !== pin.version) fail(`pin version ${pin.version} does not match plugin.json ${plugin.version ?? 'unknown'}`)
   fs.mkdirSync(options.target, { recursive: true })

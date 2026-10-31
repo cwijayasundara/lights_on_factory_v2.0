@@ -6,12 +6,15 @@ Date checked: 2026-10-31. Status: scripted profile only. A native cloud session 
 
 | Field | Value |
 | --- | --- |
-| Repository | https://github.com/cwijayasundara/rig_v1 |
-| Commit | `f33015bf12e711be7441eca45fefb177fd5d81cc` |
+| Upstream repository | https://github.com/cwijayasundara/rig_v1 |
+| Upstream commit | `f33015bf12e711be7441eca45fefb177fd5d81cc` |
 | Plugin version | 0.7.0 |
-| Install | `scripts/install-cloud-profile.ts` runs `git archive` of that commit, then Rig `vendor --standalone` |
+| Source | the pinned commit, fetched into the gitignored `.cache/rig/<commit>`, or a clean `RIG_SOURCE` checkout at exactly that commit |
+| Install | `scripts/install-cloud-profile.ts <target>` runs `vendor --standalone` from that source into a target repository |
 
-The local checkout at `learning_101/rig_v1` was dirty and not at this commit. The installer never reads that worktree. It extracts the pinned commit.
+Rig is a separate harness. The factory uses it as the behavioural harness for Claude Code sessions in target repositories. This repository is never a Rig target: it has no `.rig/`, `rig-*` skills or Rig hooks, and the installer refuses a target that is this repository or inside it. The factory keeps no copy of Rig's source. Factory-driven Rig changes go upstream to rig_v1 as their own changes, and the factory adopts them by bumping the pin.
+
+Source rules. With `RIG_SOURCE` unset, the installer fetches the pinned commit (`git fetch --depth 1`, no credential prompt, 120 s timeout) into `.cache/rig/<commit>` and reuses that directory afterwards. A cache directory at any other commit is refused, not deleted. With `RIG_SOURCE` set, the checkout must be at the pinned commit with no uncommitted or untracked files. A failed fetch leaves no cache or temporary directory behind.
 
 ## What the current cloud docs load
 
@@ -45,7 +48,9 @@ Human-only skills (`approve`, `waive`, `autonomy`) are vendored with the standal
 
 - hook commands in a fresh install resolve to files under `$CLAUDE_PROJECT_DIR/.rig/bin/sdlc.ts` and do not mention `CLAUDE_PLUGIN_ROOT`
 - `rig-chart`, `rig-plan`, `rig-build`, and `rig-pr` are present and call `.rig/bin/sdlc.ts`
-- `.rig/bin/risk.ts` matches the pinned blob, not a dirty worktree
+- `.rig/bin/risk.ts` matches `scripts/risk.ts` at the pinned commit in `.cache/rig/<commit>`
+- fetch, cache reuse, a stale cache, a failed fetch, and `RIG_SOURCE` at the wrong commit or dirty are covered with offline fixture repositories
+- the installer refuses this repository as a target, and this repository carries no vendored Rig
 - SessionStart can run twice
 - deleting `.rig/bin/sdlc.ts` makes the hook command fail visibly
 - a file containing an AWS example access key makes `hook post-edit` exit 2 with `sdlc check failed`

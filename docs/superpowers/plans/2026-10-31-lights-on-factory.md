@@ -22,6 +22,7 @@
 - No automatic merge, deployment, scope expansion, fake approvals or global disabling of Rig gates.
 - Use ordinary single-repository cloud sessions outside Projects threads for the compatibility target.
 - Pin verified Rig/runtime revisions. Preserve standalone Rig behavior.
+- Rig is a separate harness that the factory applies to target repositories. This repository is never a Rig target and keeps no copy of Rig's source. Rig changes the factory needs go upstream to rig_v1 as their own reviewed changes, then reach this repository by bumping the pin in `cloud/rig-profile/pin.json`.
 - Controller reconciliation is configured every five minutes, not guaranteed to run within five minutes.
 - Evidence retention is 90 days where supported; durable approval/result records persist in Git.
 - No unsupported session APIs, guaranteed dollar caps, cancellation guarantees or assumptions about routine-fire idempotency.
@@ -51,7 +52,7 @@ tests/fixtures/{prd,packages,reviews,candidates}/**
 docs/{cloud-compatibility,onboarding,operations,acceptance-pilot}.md
 ```
 
-Task 1 identifies exact vendored Rig files and substitutions from the pinned checkout. Rig source changes belong in a reviewed fork; repository cloud-profile templates belong here. Source helpers and workflow templates are installed/pinned from a trusted revision, never run from candidate-modified files.
+Task 1 identifies exact vendored Rig files and substitutions from the pinned rig_v1 commit. Rig source changes go upstream in rig_v1, then the pin is bumped here; repository cloud-profile templates belong here. Source helpers and workflow templates are installed into target repositories from the pinned commit, never from candidate-modified files.
 
 ## Interfaces to establish in Task 3
 
@@ -67,7 +68,7 @@ Task 1 identifies exact vendored Rig files and substitutions from the pinned che
 
 ### Task 1: Prove Rig runs and enforces its profile in native cloud
 
-**Files:** Create `docs/cloud-compatibility.md`, `cloud/environment-setup.sh`, cloud-profile templates and `scripts/install-cloud-profile.ts`; in the Rig fork, inspect `scripts/{sdlc,core,hooks,lifecycle,check,pr}.ts` and `skills/{chart,plan,build,pr}/SKILL.md` before assigning edits.
+**Files:** Create `docs/cloud-compatibility.md`, `cloud/environment-setup.sh`, cloud-profile templates and `scripts/install-cloud-profile.ts`; inspect `scripts/{sdlc,core,hooks,lifecycle,check,pr}.ts` and `skills/{chart,plan,build,pr}/SKILL.md` at the pinned rig_v1 commit (`.cache/rig/<commit>`) before assigning edits. Profile tests install into temporary target repositories, never into this one.
 
 **Produces:** A pinned cloud artifact map, path resolution strategy and observable hook/skill compatibility evidence.
 
@@ -103,14 +104,14 @@ Task 1 identifies exact vendored Rig files and substitutions from the pinned che
 
 ### Task 4: Batch authorization and AFK Rig lifecycle
 
-**Files:** Create `src/approval.ts`, `tests/integration/approval.test.ts`; in Rig add `scripts/factorycontext.ts` and tests, refactor existing lifecycle/check/contract/PR approval consumers, and add cloud planning/build entry points.
+**Files:** Create `src/approval.ts`, `tests/integration/approval.test.ts` here. Upstream in rig_v1, as its own change: add `scripts/factorycontext.ts` and tests, refactor existing lifecycle/check/contract/PR approval consumers, and add cloud planning/build entry points. Then bump the pin here.
 
 **Interfaces:** `authorizePlan(repo: Repo, pr: number, deps: Dependencies): Promise<Authorization>`; Rig `resolveApproval(slug: string, context?: FactoryContext): ApprovalResolution` returns `local-human`, `factory-batch` or `missing`.
 
 - [ ] Write failing tests: bot/comment/label-only or stale/dismissed approval cannot authorize; wrong merged artifacts or human identity fails; one valid human-approved merged package authorizes all unchanged specs/plans with no per-intent prompts.
 - [ ] Add Rig tests for changed spec/plan/contract, wrong intent/repository and missing context. Absence of factory context preserves standalone behavior. Assert no model path writes `approval.json`, sets `SDLC_HUMAN`, or disables plan gates globally.
 - [ ] Run focused tests and confirm failure. Implement immutable GitHub-based batch authorization and one central Rig resolver, then AFK chart/per-intent planning that completes the package before approval. Keep all scope/contract checks active.
-- [ ] Add candidate-only cloud closeout and exception reports. Local context cannot create authority: independent CI revalidates GitHub evidence and approved hashes. Run Rig's existing tests/typecheck and factory approval tests. Commit the Rig fork and factory adapter separately; record the verified commit before installation.
+- [ ] Add candidate-only cloud closeout and exception reports. Local context cannot create authority: independent CI revalidates GitHub evidence and approved hashes. Run Rig's tests/typecheck in rig_v1 and the factory approval tests here. Merge the Rig change upstream in rig_v1, then bump the pin in this repository and rerun the profile tests against temporary targets.
 
 ### Task 5: Deterministic native-cloud assignment and trigger handling
 

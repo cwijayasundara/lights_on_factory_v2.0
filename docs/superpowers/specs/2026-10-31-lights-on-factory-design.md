@@ -97,7 +97,9 @@ A human reviews and merges each implementation PR. A fresh live merge lookup rel
 
 ## Rig changes required
 
-1. Cloud profile with vendored scripts, repository-local skills, working paths and verified hook registration.
+Rig is a separate harness. The factory uses it as the behavioural harness for the Claude Code sessions it runs in target repositories. The factory repository itself is never a Rig target: it has no `.rig/`, no `rig-*` skills and no Rig hooks, and the installer refuses to install into it. The factory keeps no copy of Rig's source. Factory-driven Rig changes land upstream in rig_v1 as ordinary Rig changes, and the factory picks them up by bumping the pin in `cloud/rig-profile/pin.json`.
+
+1. Cloud profile with vendored scripts, repository-local skills, working paths and verified hook registration, installed into each target repository. The installer generates it from the pinned rig_v1 commit, which is fetched into the gitignored `.cache/rig/<commit>` or taken from a clean `RIG_SOURCE` checkout at that commit.
 2. AFK planning that generates every per-intent spec/plan before the batch checkpoint.
 3. Central approval resolver that accepts exact factory batch authorization in addition to existing standalone human approval. All lifecycle/build/contract/PR checks use it; no fake `approval.json`, `SDLC_HUMAN=1` in agent scripts, or globally disabled plan gate.
 4. Candidate-only closeout for the cloud workflow: push candidate/evidence, then let bot publication create the reviewable PR.
