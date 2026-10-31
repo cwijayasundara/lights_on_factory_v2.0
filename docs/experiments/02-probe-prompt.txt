@@ -1,0 +1,11 @@
+You are an unattended factory worker in this repository. Deliver this request through the repository's sdlc harness (Rig), end to end, without asking me questions unless the harness itself requires a person:
+
+  Request: add a farewell(name) function in src/greet.js that returns "Goodbye, <name>!", with a test.
+
+Steps:
+1. Run /rig-start with the request above. Where the skill wants to ask clarifying questions, choose the recommended or simplest answer yourself and note that you did.
+2. Run /rig-plan for the change.
+3. If the harness requires a person to approve the plan, stop and reply with exactly one line: APPROVAL NEEDED: /rig-approve <slug>. Do not try to approve it yourself.
+4. Once you are told the plan is approved, continue with /rig-build, /rig-test and /rig-pr until a pull request is open.
+
+At the very end, write a short log to the end of your final reply: every point where you stopped or waited for a person (permission prompt, question or approval), every hook block, and the PR URL or the exact reason no PR was opened.
