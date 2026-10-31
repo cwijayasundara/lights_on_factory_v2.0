@@ -16,6 +16,8 @@ Rig is a separate harness. The factory uses it as the behavioural harness for Cl
 
 Source rules. With `RIG_SOURCE` unset, the installer fetches the pinned commit (`git fetch --depth 1`, no credential prompt, 120 s timeout) into `.cache/rig/<commit>` and reuses that directory afterwards. A cache directory at any other commit is refused, not deleted. With `RIG_SOURCE` set, the checkout must be at the pinned commit with no uncommitted or untracked files. A failed fetch leaves no cache or temporary directory behind.
 
+Permission policy. Experiment 1 showed unattended sessions stall at every permission prompt. The installer therefore merges `cloud/rig-profile/permissions.json` into each target's `.claude/settings.json` (approved by the operator on 2026-10-31). It sets `defaultMode: acceptEdits`, allows git, `npm ci/install/test/run` and `node` commands, and denies `curl`, `wget`, force-pushes, `npm publish`, `gh release` and `gh workflow run`. Rig's own allow, ask and deny rules are kept. Ask and deny rules still win over these allows, so edits to `.claude/settings.json`, `.rig/bin/**` and approval files still stop for a person.
+
 ## What the current cloud docs load
 
 Checked against [Configure cloud environments](https://code.claude.com/docs/en/cloud-environments) and [Skills in cloud sessions](https://code.claude.com/docs/en/skills). This matches the design's compatibility section.

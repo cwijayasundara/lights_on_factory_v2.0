@@ -289,6 +289,34 @@ test('B2/B10/B13: a real install fetches the pin and resolves hooks and skills w
   }
 })
 
+test('P1: the unattended permission policy is merged into the target, keeping Rig rules, with no duplicates', async () => {
+  const policy = JSON.parse(fs.readFileSync(path.join(repoRoot, 'cloud/rig-profile/permissions.json'), 'utf8')) as {
+    defaultMode: string
+    allow: string[]
+    deny: string[]
+  }
+  assert.equal(policy.defaultMode, 'acceptEdits')
+  for (const rule of ['Bash(git commit *)', 'Bash(git push *)', 'Bash(npm test)', 'Bash(npm ci)']) assert.ok(policy.allow.includes(rule), rule)
+  for (const rule of ['Bash(curl *)', 'Bash(wget *)', 'Bash(git push --force*)', 'Bash(npm publish*)']) assert.ok(policy.deny.includes(rule), rule)
+  assert.equal(policy.allow.some(rule => rule === 'Bash' || rule === 'Bash(*)'), false)
+
+  const target = tmp('rig-policy-')
+  run('git', ['init'], { cwd: target })
+  await installInto(target)
+  await installInto(target)
+  const settings = JSON.parse(fs.readFileSync(path.join(target, '.claude/settings.json'), 'utf8')) as {
+    permissions: { defaultMode?: string; allow: string[]; ask: string[]; deny: string[] }
+  }
+  const { permissions } = settings
+  assert.equal(permissions.defaultMode, 'acceptEdits')
+  for (const rule of policy.allow) assert.ok(permissions.allow.includes(rule), rule)
+  for (const rule of policy.deny) assert.ok(permissions.deny.includes(rule), rule)
+  assert.ok(permissions.allow.includes('Skill(rig-start)'))
+  assert.ok(permissions.deny.includes('Edit(/.rig/changes/*/approval.json)'))
+  assert.ok(permissions.ask.includes('Edit(/.claude/settings.json)'))
+  for (const list of [permissions.allow, permissions.deny]) assert.equal(new Set(list).size, list.length)
+})
+
 test('B6: a clean RIG_SOURCE checkout at the pin is vendored without touching the cache', async () => {
   await installInto(tmp('rig-profile-'))
   const worktree = path.join(tmp('rig-worktree-'), 'rig')

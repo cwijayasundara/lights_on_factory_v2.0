@@ -136,6 +136,21 @@ function ensureStartupHook(target: string): void {
   fs.writeFileSync(file, `${JSON.stringify(settings, null, 2)}\n`)
 }
 
+type Permissions = { defaultMode?: string; allow?: string[]; ask?: string[]; deny?: string[] }
+
+// Merge the factory's unattended permission policy into the target; Rig's own rules stay.
+function applyPermissionPolicy(factoryRoot: string, target: string): void {
+  const policy = JSON.parse(fs.readFileSync(path.join(factoryRoot, 'cloud/rig-profile/permissions.json'), 'utf8')) as Permissions
+  const file = path.join(target, '.claude/settings.json')
+  const settings = JSON.parse(fs.readFileSync(file, 'utf8')) as { permissions?: Permissions }
+  const permissions = (settings.permissions ??= {})
+  if (policy.defaultMode) permissions.defaultMode = policy.defaultMode
+  const union = (current: string[] = [], extra: string[] = []) => [...new Set([...current, ...extra])]
+  permissions.allow = union(permissions.allow, policy.allow)
+  permissions.deny = union(permissions.deny, policy.deny)
+  fs.writeFileSync(file, `${JSON.stringify(settings, null, 2)}\n`)
+}
+
 function writeProvenance(target: string, source: string, pin: Pin): void {
   const license = path.join(source, 'LICENSE')
   if (fs.existsSync(license)) fs.copyFileSync(license, path.join(target, '.rig/LICENSE'))
@@ -166,6 +181,7 @@ export function installCloudProfile(options: InstallOptions): void {
   if (result.status !== 0) fail(`vendor --standalone failed:\n${result.stdout}\n${result.stderr}`)
   copySetup(options.factoryRoot, options.target)
   ensureStartupHook(options.target)
+  applyPermissionPolicy(options.factoryRoot, options.target)
   writeProvenance(options.target, source, pin)
   fs.rmSync(path.join(options.target, '.rig/.gate'), { force: true })
 }

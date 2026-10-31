@@ -1,0 +1,41 @@
+{
+  "$comment": "Unattended factory policy merged into each target's .claude/settings.json by scripts/install-cloud-profile.ts. Edits plus build, test and git run without asking; network fetches, publishing and force-pushes are denied. Rig's own ask/deny rules are kept and take precedence over these allows. Approved by the operator 2026-10-31.",
+  "defaultMode": "acceptEdits",
+  "allow": [
+    "Bash(git status*)",
+    "Bash(git diff*)",
+    "Bash(git log*)",
+    "Bash(git show*)",
+    "Bash(git add *)",
+    "Bash(git commit *)",
+    "Bash(git checkout *)",
+    "Bash(git switch *)",
+    "Bash(git branch*)",
+    "Bash(git fetch*)",
+    "Bash(git pull*)",
+    "Bash(git rebase *)",
+    "Bash(git rev-parse *)",
+    "Bash(git rm *)",
+    "Bash(git mv *)",
+    "Bash(git push *)",
+    "Bash(npm ci)",
+    "Bash(npm install)",
+    "Bash(npm test)",
+    "Bash(npm test *)",
+    "Bash(npm run *)",
+    "Bash(node *)",
+    "Bash(ls *)",
+    "Bash(mkdir *)"
+  ],
+  "deny": [
+    "Bash(curl *)",
+    "Bash(wget *)",
+    "Bash(git push --force*)",
+    "Bash(git push -f*)",
+    "Bash(git push * --force*)",
+    "Bash(git push * -f*)",
+    "Bash(npm publish*)",
+    "Bash(gh release *)",
+    "Bash(gh workflow run *)"
+  ]
+}
