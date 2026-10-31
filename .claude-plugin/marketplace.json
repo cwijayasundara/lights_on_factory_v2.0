@@ -1,0 +1,12 @@
+{
+  "name": "rig-local",
+  "owner": {
+    "name": "rig"
+  },
+  "plugins": [
+    {
+      "name": "rig",
+      "source": "./.rig/mod"
+    }
+  ]
+}

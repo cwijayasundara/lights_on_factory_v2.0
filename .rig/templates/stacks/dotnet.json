@@ -1,0 +1,16 @@
+{
+  "stack": "dotnet",
+  "markers": ["*.sln", "*.csproj"],
+  "paths": { "tests": ["**/*.Tests/**", "**/*.Test/**", "**/*Tests.cs"], "testSupport": ["**/TestData/**"] },
+  "contracts": { "files": [], "validate": "", "run": "" },
+  "sensors": [
+    { "id": "types", "cmd": "dotnet build --nologo -v q", "cadence": "turn", "blocks": true, "guide": "The solution must build before the turn ends." },
+    { "id": "unit", "cmd": "dotnet test --nologo -v q", "cadence": "turn", "blocks": true, "guide": "Run dotnet test before claiming done; fix the code, never the tests." },
+    { "id": "lint", "cmd": "dotnet format --verify-no-changes", "cadence": "commit", "blocks": true, "guide": "dotnet format must report no changes; do not suppress analyzers without a reason." },
+    { "id": "layers", "cmd": "dotnet test --nologo -v q --filter Category=Architecture", "cadence": "commit", "blocks": true, "guide": "Respect the layer rules in the architecture tests." },
+    { "id": "duplication", "cmd": "d=$(mktemp -d) && npx --yes jscpd@5.4.2 . --ignore \"**/.rig/**,**/.claude/**\" --silent --reporters json --output \"$d\" >&2 && node -p \"try{require('$d/jscpd-report.json').statistics.total.percentage}catch{0}\"", "cadence": "commit", "blocks": true, "ratchet": "down", "guide": "Reuse existing code instead of copying it; the duplicated share may not grow past its baseline." },
+    { "id": "sast", "cmd": "if semgrep --version >/dev/null 2>&1; then semgrep scan --config p/default --error --metrics=off --disable-version-check --quiet {changed}; s=$?; [ $s -le 1 ] || [ -n \"$CI\" ] && exit $s; echo \"sast: Semgrep could not scan here (exit $s: offline, or the rules did not load), so CI scans this change\"; elif [ -n \"$CI\" ]; then echo 'sast: Semgrep does not run in CI (pipx install semgrep)'; exit 1; else echo 'sast: Semgrep does not run here (missing or broken), so CI scans this change (pipx install semgrep to scan locally)'; fi", "cadence": "commit", "blocks": true, "guide": "Semgrep scans the source files this change touches for security bugs (injection, unsafe input, secrets, weak crypto); fix the code rather than silencing the rule." },
+    { "id": "audit", "cmd": "dotnet list package --vulnerable --include-transitive | grep '^ *>' || true", "cadence": "ci", "blocks": false, "guide": "Do not add packages with known vulnerabilities." },
+    { "id": "mutation", "cmd": "dotnet stryker", "cadence": "nightly", "blocks": false, "guide": "Tests must assert behaviour so that changing the code makes them fail." }
+  ]
+}

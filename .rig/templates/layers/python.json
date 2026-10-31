@@ -1,0 +1,7 @@
+{
+  "analyser": "import-linter",
+  "root": "src",
+  "config": ".rig/gen/importlinter.ini",
+  "baseline": "PYTHONPATH=src lint-imports --config .rig/gen/importlinter.ini",
+  "install": "pip install import-linter"
+}

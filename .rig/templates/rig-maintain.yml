@@ -1,0 +1,66 @@
+# The rig nightly Maintain scan. Copy to .github/workflows/ (init --full --workflows does). It is OFF until a person turns it on:
+#   gh variable set RIG_MAINTAIN --body on        (turn it off again: gh variable delete RIG_MAINTAIN)
+# The five questions (docs/GOAL.md, "Rules for anything that runs unattended"):
+#   Triggers:    one scheduled run a day, or a person's workflow_dispatch.
+#   Reads/writes: reads the tracked files; writes only .rig/maintain/ (proposed intents and seen.json) on a branch rig/maintain-<date>.
+#   Triggers next: one pull request. Nothing else runs from it, and a person reviews it: merging it files the proposals, starting one is a later, human step.
+#   A person re-enters: at the pull request. The run never waits; the next day's run starts from the repo alone.
+#   Two runs: one open rig/maintain-* pull request at a time (a run that finds one stops), and `concurrency` below. A finding is proposed once:
+#             seen.json is gitignored in a working tree, so this job force-adds it to the pull request and the next run reads it from the repo.
+# A pull request opened with the default GITHUB_TOKEN does not start other workflows, so rig-check will not run on it and a required check stays pending.
+# Add a RIG_BOT_TOKEN secret (a fine-grained token with contents and pull-requests write) and its checks run; without it, close and reopen the pull request.
+name: rig-maintain
+on:
+  schedule:
+    - cron: '23 4 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: rig-maintain
+  cancel-in-progress: false
+jobs:
+  maintain:
+    if: vars.RIG_MAINTAIN == 'on'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ secrets.RIG_BOT_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RIG_BOT_TOKEN || github.token }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18'
+      - name: Stop while an earlier maintain pull request is still open
+        id: open
+        run: |
+          base=$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)
+          if [ "$GITHUB_REF_NAME" != "$base" ]; then echo "::error::run this from $base, not $GITHUB_REF_NAME: the pull request targets $base"; exit 1; fi
+          n=$(gh pr list --state open --limit 1000 --json headRefName --jq '[.[] | select(.headRefName | startswith("rig/maintain-"))] | length')
+          echo "open=$n" >> "$GITHUB_OUTPUT"
+          if [ "$n" != "0" ]; then echo "::notice::a rig/maintain-* pull request is still open; not scanning until a person merges or closes it"; fi
+      - name: Scan (at most 5 new findings; each is proposed once)
+        if: steps.open.outputs.open == '0'
+        shell: bash # -eo pipefail: a failed scan must not be hidden by tee
+        run: node --disable-warning=ExperimentalWarning .rig/bin/sdlc.ts maintain --cap 5 | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Open one pull request for the new proposals
+        if: steps.open.outputs.open == '0'
+        run: |
+          if [ -z "$(git status --porcelain -- .rig/maintain)" ]; then echo "::notice::nothing new to propose"; exit 0; fi
+          branch="rig/maintain-$(date -u +%Y-%m-%d)-${{ github.run_id }}"
+          git config user.name "rig-maintain"
+          git config user.email "rig-maintain@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add .rig/maintain
+          git add -f .rig/maintain/seen.json
+          git commit -m "chore(maintain): propose intents found by the nightly scan"
+          git push origin "$branch"
+          # no --base: gh targets the default branch, and the open step above refused any other ref. If the PR cannot be created (the repo setting
+          # "Allow GitHub Actions to create and approve pull requests" is off by default), delete the branch so no orphan is left behind.
+          gh pr create --head "$branch" \
+            --title "chore(maintain): intents found by the nightly scan" \
+            --body "Found by \`sdlc.ts maintain\`, not by a person: confirm each is real before acting. Merging this only files the proposals under \`.rig/maintain/proposals/\`; nothing is edited and nothing is started. Closing it without merging drops them, and tomorrow's scan proposes them again; to stop one coming back, merge this and delete its proposal file." \
+            || { git push origin --delete "$branch"; exit 1; }

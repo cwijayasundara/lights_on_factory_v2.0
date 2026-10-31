@@ -1,0 +1,25 @@
+# Copy to CODEOWNERS (or .github/CODEOWNERS), replace @your-org/platform with the people who own the harness, and turn on
+# "Require review from Code Owners" for the branch. These are the files that decide what a change is judged by, so a PR may not
+# loosen them on its own say-so; the per-change state under .rig/changes/ is not here, so ordinary work needs no owner review.
+# scripts/owners.spec.ts keeps this list equal to the harness-tamper sensor's protected paths, no wider and no narrower.
+/.rig/sensors.json                @your-org/platform
+/.rig/rules.json                  @your-org/platform
+/.rig/ratchets.json               @your-org/platform
+/.rig/layers.approved.json        @your-org/platform
+/.rig/gen/                        @your-org/platform
+/.rig/verify/                     @your-org/platform
+/.rig/lessons.md                  @your-org/platform
+/.rig/lessons-archive.md          @your-org/platform
+/.rig/guides/                     @your-org/platform
+/.rig/bin/                        @your-org/platform
+/.rig/mod/                        @your-org/platform
+/.rig/githooks/                   @your-org/platform
+/.claude-plugin/                  @your-org/platform
+/.claude/                         @your-org/platform
+/CLAUDE.md                        @your-org/platform
+/.github/workflows/rig-*.yml      @your-org/platform
+/.github/workflows/sdlc-check.yml @your-org/platform
+/CODEOWNERS                       @your-org/platform
+/.github/CODEOWNERS               @your-org/platform
+# The waiver ledger is evidence a person adds to; CI already wants an independent reviewer for new rows.
+/.rig/waivers.jsonl               @your-org/platform

@@ -1,0 +1,5 @@
+{
+  "name": "rig",
+  "version": "0.7.0",
+  "types": "./types/index.d.ts"
+}

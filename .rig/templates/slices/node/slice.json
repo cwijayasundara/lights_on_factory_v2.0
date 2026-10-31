@@ -1,0 +1,24 @@
+{
+  "stack": "node",
+  "paths": [
+    "src/**"
+  ],
+  "layers": [
+    "layer domain src/*/domain/**",
+    "layer app src/*/app/**",
+    "layer infra src/*/infra/**",
+    "layer http src/*/http/**",
+    "allow app -> domain",
+    "allow infra -> domain",
+    "allow http -> app, domain"
+  ],
+  "test": "node --test",
+  "needs": [
+    {
+      "file": "package.json",
+      "json": "type",
+      "equals": "module",
+      "note": "this slice is ES modules: set \"type\": \"module\" in package.json, or the imports will not load"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+#!/bin/sh
+# rig: runs the same checker as Stop, ship and CI.
+cd "$(git rev-parse --show-toplevel)" || exit 0
+if ! command -v node >/dev/null 2>&1 || ! node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>22||(a===22&&b>=18)?0:1)'; then
+  echo "rig: Node >= 22.18 not found, skipping pre-push (CI still checks)" >&2; exit 0
+fi
+[ -f .rig/bin/sdlc.ts ] || { echo "rig: .rig/bin/sdlc.ts is missing, skipping pre-push (run vendor, then hooks install)" >&2; exit 0; }
+exec node --disable-warning=ExperimentalWarning .rig/bin/sdlc.ts check --at push

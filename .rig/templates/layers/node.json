@@ -1,0 +1,7 @@
+{
+  "analyser": "dependency-cruiser",
+  "root": "src",
+  "config": ".rig/gen/dependency-cruiser.cjs",
+  "baseline": "npx --no-install depcruise {roots} --config .rig/gen/dependency-cruiser.cjs --output-type baseline",
+  "install": "npm install --save-dev dependency-cruiser"
+}

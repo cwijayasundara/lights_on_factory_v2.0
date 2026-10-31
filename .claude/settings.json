@@ -1,0 +1,196 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit(.rig/**)",
+      "Bash(node --disable-warning=ExperimentalWarning .rig/bin/sdlc.ts *)",
+      "Skill(rig:start)",
+      "Skill(rig:start *)",
+      "Skill(rig-start)",
+      "Skill(rig-start *)",
+      "Skill(rig:plan)",
+      "Skill(rig:plan *)",
+      "Skill(rig-plan)",
+      "Skill(rig-plan *)",
+      "Skill(rig:build)",
+      "Skill(rig:build *)",
+      "Skill(rig-build)",
+      "Skill(rig-build *)",
+      "Skill(rig:test)",
+      "Skill(rig:test *)",
+      "Skill(rig-test)",
+      "Skill(rig-test *)",
+      "Skill(rig:pr)",
+      "Skill(rig:pr *)",
+      "Skill(rig-pr)",
+      "Skill(rig-pr *)",
+      "Skill(rig:rule)",
+      "Skill(rig:rule *)",
+      "Skill(rig:arch)",
+      "Skill(rig:arch *)",
+      "Skill(rig:app)",
+      "Skill(rig:app *)",
+      "Skill(rig-rule)",
+      "Skill(rig-rule *)",
+      "Skill(rig-arch)",
+      "Skill(rig-arch *)",
+      "Skill(rig-app)",
+      "Skill(rig-app *)",
+      "Skill(rig:chart)",
+      "Skill(rig:chart *)",
+      "Skill(rig-chart)",
+      "Skill(rig-chart *)",
+      "Skill(rig:testplan)",
+      "Skill(rig:testplan *)",
+      "Skill(rig-testplan)",
+      "Skill(rig-testplan *)",
+      "Skill(rig:wiki)",
+      "Skill(rig:wiki *)",
+      "Skill(rig-wiki)",
+      "Skill(rig-wiki *)",
+      "Skill(rig:learn)",
+      "Skill(rig:learn *)",
+      "Skill(rig-learn)",
+      "Skill(rig-learn *)",
+      "Bash(gh pr comment *)",
+      "Bash(gh pr view *)"
+    ],
+    "ask": [
+      "Edit(/.rig/sensors.json)",
+      "Edit(/.rig/rules.json)",
+      "Edit(/.rig/layers.approved.json)",
+      "Edit(/.rig/ratchets.json)",
+      "Edit(/.rig/gen/**)",
+      "Edit(/.rig/lessons.md)",
+      "Edit(/.rig/lessons-archive.md)",
+      "Edit(/.claude/settings.json)",
+      "Edit(/.rig/bin/**)",
+      "Edit(/.rig/githooks/**)",
+      "Edit(/.rig/mod/**)",
+      "Edit(/.rig/guides/**)",
+      "Edit(/.github/workflows/rig-*.yml)",
+      "Edit(/CODEOWNERS)",
+      "Edit(/.github/CODEOWNERS)",
+      "Edit(/migrations/**)",
+      "Edit(/infra/**)"
+    ],
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)",
+      "Edit(.env)",
+      "Edit(.env.*)",
+      "Edit(/.rig/changes/*/approval.json)",
+      "Edit(/.rig/product/sprints/**/approval.json)",
+      "Edit(/.rig/product/sprints/**/waivers.json)",
+      "Edit(/.rig/waivers.jsonl)",
+      "Edit(/.rig/.gate)",
+      "Edit(/.rig/.baseline)",
+      "Edit(/.rig/unresolved.json)",
+      "Edit(/.rig/gates.jsonl)",
+      "Edit(/.rig/changes/*/evidence/runs.jsonl)",
+      "Edit(/.rig/changes/*/verify.json)",
+      "Edit(/.rig/changes/*/pr.md)"
+    ]
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node --disable-warning=ExperimentalWarning \"$CLAUDE_PROJECT_DIR/.rig/bin/sdlc.ts\" hook prompt-submit",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node --disable-warning=ExperimentalWarning \"$CLAUDE_PROJECT_DIR/.rig/bin/sdlc.ts\" hook stop",
+            "timeout": 90
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/cloud/environment-setup.sh\"",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node --disable-warning=ExperimentalWarning \"$CLAUDE_PROJECT_DIR/.rig/bin/sdlc.ts\" hook session-start",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node --disable-warning=ExperimentalWarning \"$CLAUDE_PROJECT_DIR/.rig/bin/sdlc.ts\" hook post-edit",
+            "timeout": 75
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node --disable-warning=ExperimentalWarning \"$CLAUDE_PROJECT_DIR/.rig/bin/sdlc.ts\" hook agent-done",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node --disable-warning=ExperimentalWarning \"$CLAUDE_PROJECT_DIR/.rig/bin/sdlc.ts\" hook agent-launch",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostModelSwitch": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node --disable-warning=ExperimentalWarning \"$CLAUDE_PROJECT_DIR/.rig/bin/sdlc.ts\" hook model-switch",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "extraKnownMarketplaces": {
+    "rig-local": {
+      "source": {
+        "source": "directory",
+        "path": "."
+      }
+    }
+  },
+  "enabledPlugins": {
+    "rig@rig-local": true
+  }
+}
