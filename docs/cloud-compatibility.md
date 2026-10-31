@@ -1,6 +1,6 @@
 # Native-cloud Rig compatibility
 
-Date checked: 2026-10-31. Status: scripted profile only. A native cloud session was not observed, so this note does not claim the profile is portable. Architectural rollout stays stopped until a disposable ordinary single-repository cloud session records the live evidence below.
+Date checked: 2026-10-31. Status: a native cloud session was observed (experiment 1, see "Native session evidence"). The vendored profile loads and its hooks enforce in an ordinary single-repository cloud session. Unattended operation is not yet proven: the session stopped at every permission prompt, and its results branch was never pushed.
 
 ## Pin
 
@@ -22,7 +22,7 @@ Checked against [Configure cloud environments](https://code.claude.com/docs/en/c
 
 Ordinary single-repository sessions, outside Claude Projects threads, load committed `.claude/skills/`, `.claude/agents/`, and `.claude/settings.json` hooks and permission rules. They do not load `~/.claude/` from the operator's machine. `enabledPlugins` and `extraKnownMarketplaces` in the repository settings do not install plugins. A Projects thread does not run repository settings hooks and does not load repository skills the same way. Do not use a Projects thread for this proof.
 
-Anthropic-hosted VMs are Ubuntu 24.04 with Node 22 on `PATH` (`/opt/node22`). Rig's own hooks refuse to run under Node older than 22.18. `cloud/environment-setup.sh` is the toolchain check: it exits 0 when Node is new enough and exits 1 with `Node.js >= 22.18` on stderr otherwise. It is idempotent. The installer registers it as a SessionStart hook. The cloud environment dialog still has to point its setup script at this file; committing the file does not select it.
+Anthropic-hosted VMs are Ubuntu 24.04 with Node 22 on `PATH` (`/opt/node22`). Rig's own hooks refuse to run under Node older than 22.18. `cloud/environment-setup.sh` is the toolchain check: it exits 0 when Node is new enough and exits 1 with `Node.js >= 22.18` on stderr otherwise. It is idempotent. The installer registers it as a SessionStart hook, so the **Default** environment needs no setup script. (An environment's setup script is text pasted into the environment dialog, not a path in the repository.)
 
 ## Path strategy
 
@@ -56,13 +56,22 @@ Human-only skills (`approve`, `waive`, `autonomy`) are vendored with the standal
 - a file containing an AWS example access key makes `hook post-edit` exit 2 with `sdlc check failed`
 - `cloud/environment-setup.sh` fails visibly when Node is missing or reports `v20.11.0`
 
-## Native session still required
+## Native session evidence
 
-No Claude CLI revision, cloud session URL, loaded-skill list, or live hook trace was captured. Record these in a separately authorized disposable ordinary cloud session, not a Projects thread:
+Experiment 1 (`docs/experiments/01-rig-enforces-in-cloud.md`), 2026-10-31. Session `session_012PjRkTZiSGP2nv4yUAp6SL` (https://claude.ai/code/session_012PjRkTZiSGP2nv4yUAp6SL). Ordinary single-repository session on the disposable private repo `cwijayasundara/rig-cloud-probe`, Default environment, no setup script. Started with `claude --cloud` from a terminal. The evidence below was reported by the session itself and pasted back by the operator.
 
-- `claude --version` and `.rig/CLOUD_PROFILE.json`
-- SessionStart, post-edit, and Stop hook output
-- one deliberate secret-pattern edit and the failed checker result
-- which of `enabledPlugins` failed to load
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Runtime | pass | `2.1.316 (Claude Code)`, Node `v22.23.4` (≥ 22.18), `CLAUDE_CODE_REMOTE=true`; `.rig/CLOUD_PROFILE.json` shows `f33015bf…`, 0.7.0 |
+| Skills and agents load | pass | 13 `rig-*` skills listed (app, arch, build, chart, init, learn, plan, pr, rule, start, test, testplan, wiki) plus agents `rig-architect`, `rig-evaluator`. The human-only skills (`approve`, `waive`, `autonomy`) were not listed, as intended |
+| SessionStart hook | pass | `SessionStart hook additional context: sdlc harness is active in this repo (artifacts in .rig/).`; Rig also installed its git hooks: `core.hooksPath = .rig/githooks` (pre-commit, pre-push) |
+| Post-edit enforcement | pass | `PostToolUse:Write hook blocking error from command: "node … .rig/bin/sdlc.ts hook post-edit": … sdlc check failed, fix before continuing: /home/user/repo/notes.txt:1: possible AWS access key` |
+| Manual `hook session-start` | pass | emitted the SessionStart JSON, `exit=0` |
+| Stop hook | not shown | no hook error was reported when the turn ended; no positive trace captured |
 
-Until that note exists, do not start Tasks 2–8 as if enforcement had been observed in the cloud.
+What this does and does not prove:
+
+- **Enforcement is feedback after the edit, not prevention.** A PostToolUse hook runs after the write: `notes.txt` was created, then Claude was told to fix it. What actually stops bad work is the git pre-commit and pre-push hooks the profile installs in the VM, plus independent CI (plan Task 6). A session can't land a secret as long as CI checks it too.
+- **Unattended runs stall at every permission prompt.** In the default permission mode, the session stopped for a person at each Write, Bash and git call. Rig's committed allow list covers only its own skills and checker. A factory session needs a target-repo permission policy (for example `permissions.defaultMode` plus allow rules for build, test and git commands) installed with the profile, or a task configuration that sets the mode. This needs a person's decision, because it widens what an unwatched agent can do.
+- **Publishing is unproven.** The session never pushed `probe/results-1`. The cause wasn't captured: a permission stall, or no push access because the Claude GitHub App isn't installed on the repo. Plan Task 2 covers this.
+- **Not exercised:** `/rig-start` and the human approval stop (P4), a positive Stop-hook trace, triggering without a terminal, and the laptop being offline.

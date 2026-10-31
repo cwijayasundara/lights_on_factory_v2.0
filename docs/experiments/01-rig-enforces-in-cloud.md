@@ -1,6 +1,6 @@
 # Experiment 1: does Rig enforce inside a native Claude Code cloud session?
 
-Status: ready to run. Not yet observed.
+Status: run on 2026-10-31. **Rig enforces in the cloud** (P1, P2 and P5 pass). Findings: unattended runs stall at permission prompts, and publishing is unproven. Full evidence is in `docs/cloud-compatibility.md` under "Native session evidence".
 
 ## Why this first
 
@@ -37,14 +37,16 @@ The individual prompts, if you prefer to type them in the web UI:
 
 | # | Result (pass/fail) | Evidence (paste) |
 |---|---|---|
-| P1 | | |
-| P2 | | |
-| P3 | | |
-| P4 | | |
-| P5 | | |
+| P1 | pass | Claude Code 2.1.316, Node v22.23.4, `CLAUDE_CODE_REMOTE=true`, profile at `f33015b`; 13 `rig-*` skills plus 2 agents; SessionStart context injected; git hooks installed |
+| P2 | pass | `PostToolUse:Write hook blocking error … sdlc check failed, fix before continuing: /home/user/repo/notes.txt:1: possible AWS access key` (the file was written first; the hook gives feedback, it doesn't prevent the write) |
+| P3 | pass (weak) | `rm notes.txt` ran; no Stop-hook error, but no positive Stop trace either |
+| P4 | not run | |
+| P5 | pass | SessionStart JSON emitted, `exit=0` |
 
-Session URL: 
-Date:
+Also observed: the session waited for a person at every Write, Bash and git permission prompt, and `probe/results-1` was never pushed, so the results were pasted back by hand.
+
+Session URL: https://claude.ai/code/session_012PjRkTZiSGP2nv4yUAp6SL
+Date: 2026-10-31
 
 ## Decide
 
