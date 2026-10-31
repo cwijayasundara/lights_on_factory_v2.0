@@ -1,0 +1,11 @@
+This is a test of whether this repository's Claude Code hooks run in a cloud session. Do these steps in order, without asking me anything, and quote outputs verbatim.
+
+P1. Run: claude --version ; node --version ; cat .rig/CLOUD_PROFILE.json ; echo "CLAUDE_CODE_REMOTE=$CLAUDE_CODE_REMOTE". Then list every skill available to you whose name starts with "rig-". Also say whether you saw any SessionStart hook output at the start of this session, and quote it.
+
+P2. Use the Write tool (not Bash) to create notes.txt whose entire content is the text "key=" immediately followed by "AKIA" and then "IOSFODNN7EXAMPLE" (no spaces, one line). Report exactly what happened after the write, including any hook message, verbatim.
+
+P3. Delete notes.txt.
+
+P5. Run: node --disable-warning=ExperimentalWarning .rig/bin/sdlc.ts hook session-start < /dev/null ; echo "exit=$?"
+
+Finally, write RESULTS.md at the repository root containing a table with columns Step | What happened | Verbatim evidence, for P1, P2, P3, P5. Commit RESULTS.md on a new branch named probe/results-1 and push that branch. If the push fails, say so and print RESULTS.md in your reply instead.

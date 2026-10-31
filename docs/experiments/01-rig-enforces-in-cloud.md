@@ -14,10 +14,16 @@ Every other part of the factory assumes Rig's hooks run and block bad work in a 
 
 ## Steps (you)
 
-1. Push the probe to a **private** GitHub repo:
-   `gh repo create cwijayasundara/rig-cloud-probe --private --source ~/Documents/learning_102/rig-cloud-probe --push`
-2. At claude.ai/code, add the repo and create a cloud environment for it. Set the setup script to `bash cloud/environment-setup.sh`. Start an **ordinary session on that repo**, not a Projects thread.
-3. Send these prompts one at a time and copy each full reply (and any hook messages) into the table below.
+1. The probe is pushed to the private repo `cwijayasundara/rig-cloud-probe`.
+2. No cloud environment setup is needed. The **Default** environment has Node 22, and the repo's own SessionStart hook runs `cloud/environment-setup.sh`. A setup script isn't a repo path anyway: it's text pasted into the environment dialog.
+3. In your own terminal (`--cloud` needs a real TTY), run:
+   ```
+   cd ~/Documents/learning_102/rig-cloud-probe
+   claude --cloud "$(cat ~/Documents/learning_102/lights_on_factory_v2.0/docs/experiments/01-probe-prompt.txt)"
+   ```
+   The prompt runs P1, P2, P3 and P5 unattended and pushes `RESULTS.md` to branch `probe/results-1`. The CLI prints a claude.ai/code link where you can watch it. P4 (`/rig-start`) is sent afterwards as a follow-up: `claude -p '/rig-start "add a farewell(name) function with a test"' --cloud <session-id>`.
+
+The individual prompts, if you prefer to type them in the web UI:
 
 | # | Prompt | Pass if |
 |---|---|---|
