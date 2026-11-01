@@ -33,6 +33,25 @@ All three work on Python, so no tool was swapped.
 
 Scoping lint to `src tests` keeps the operator-owned `.factory/gates/` out of the agent's lint gate.
 
-## Isolation
+## Isolation and the hook loop
 
-Recorded by Task 7.
+Probed with Claude Code 2.1.316 on 2026-11-01, using a clean environment (`env -i HOME USER PATH TERM LANG`) so nothing leaked from the session that ran the probe.
+
+**Isolation passes with `--setting-sources project`; the `CLAUDE_CONFIG_DIR` fallback is not needed.** In a scratch repo holding only `.claude/skills/build-discipline`, `claude --setting-sources project -p "…"` listed `build-discipline` plus Claude Code's built-in skills only. No `superpowers:` or `lights-on:` skills, no user `~/.claude/CLAUDE.md` text, no auto-memory index lines, no MCP servers. The installer keeps writing `setting-sources` to `.factory/isolation`.
+
+**Workspace trust.** A folder that has never been opened interactively is untrusted, and Claude Code then ignores the project's `permissions.allow` entries (it prints "Ignoring 14 permissions.allow entries … this workspace has not been trusted"). Hooks still run. Auto mode still made the toy build work without them. An interactive start shows the trust dialog once per folder.
+
+**Loop guard, observed live.** The first probe ran in the installed toy target, so the Stop hook took over the session. With print mode and no write permission, it blocked 8 times with the same fingerprint (`write PLAN.md from SPEC.md`), then allowed the stop as `STALLED`, exactly as designed.
+
+**Full loop on the toy target.** `claude --setting-sources project --permission-mode auto -p "$(cat .factory/build-prompt.txt)"` in an installed toy repo with a local bare `origin`:
+
+| Measure | Observed |
+| --- | --- |
+| Prompts or questions | 0 |
+| Wall time | about 2.5 minutes |
+| Commits pushed | 3 after install (plan, build, marks plus report) |
+| Hook decisions | 1: allow `COMPLETE` on the first stop attempt (all gates, including the full mutation run, passed inside the hook) |
+| Report header | `COMPLETE` |
+| Plan | 4 of 4 tasks `[x]`, the last verifying with the demo command |
+
+Gap seen: the agent put all four tasks in one commit, against the skill's one-commit-per-task rule. The hook does not enforce commit granularity.
