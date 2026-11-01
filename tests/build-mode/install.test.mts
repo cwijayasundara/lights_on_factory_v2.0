@@ -255,3 +255,91 @@ test('run records are git-ignored so measuring never dirties the tree', async ()
   await install(dir)
   assert.match(fs.readFileSync(path.join(dir, '.gitignore'), 'utf8'), /^\.factory\/runs\/$/m)
 })
+
+// ---- acceptance writer: a fresh session the installer starts ----
+
+// A fake `claude` that records its argument vector and cwd, then runs a body of shell.
+function fakeClaude(body: string): { env: NodeJS.ProcessEnv; calls: () => string[][] } {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-claude-'))
+  const log = path.join(home, 'calls.jsonl')
+  const bin = path.join(home, 'claude')
+  fs.writeFileSync(bin, `#!/bin/sh\nnode -e 'require("fs").appendFileSync(process.argv[1], JSON.stringify([process.cwd(), ...process.argv.slice(2)]) + "\\n")' "${log}" "$@"\n${body}\n`, { mode: 0o755 })
+  return {
+    env: { LIGHTS_ON_CLAUDE: bin },
+    calls: () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line)) : []),
+  }
+}
+
+const WRITES_SUITE = 'mkdir -p acceptance && printf "def test_demo():\\n    assert 1 == 1\\n" > acceptance/test_demo.py'
+
+async function installWithWriter(dir: string, env: NodeJS.ProcessEnv) {
+  const previous = process.env.LIGHTS_ON_CLAUDE
+  process.env.LIGHTS_ON_CLAUDE = env.LIGHTS_ON_CLAUDE
+  try {
+    return await (await installer()).installBuildMode({ target: dir, factoryRoot, demo: DEMO, acceptance: true } as Options & { acceptance: boolean })
+  } finally {
+    if (previous === undefined) delete process.env.LIGHTS_ON_CLAUDE
+    else process.env.LIGHTS_ON_CLAUDE = previous
+  }
+}
+
+test('--acceptance starts a fresh restricted session and the suite lands in the install commit', async () => {
+  const dir = target()
+  const fake = fakeClaude(WRITES_SUITE)
+  const { installCommit } = await installWithWriter(dir, fake.env)
+  const [call] = fake.calls()
+  assert.equal(fs.realpathSync(call[0]), dir)
+  assert.equal(call[1], '-p')
+  assert.match(call[2], /acceptance\//)
+  const flags = call.slice(3).join(' ')
+  assert.match(flags, /--setting-sources project/)
+  assert.match(flags, /--allowedTools .*Write\(acceptance\/\*\*\)/)
+  assert.match(flags, /--disallowedTools .*Read\(src\/\*\*\)/)
+  assert.match(flags, /--disallowedTools .*Bash/)
+  assert.ok(git(dir, 'ls-tree', '-r', '--name-only', installCommit).split('\n').includes('acceptance/test_demo.py'))
+  const config = readJson(path.join(dir, '.factory/build.json'))
+  assert.equal(config.acceptance.name, 'acceptance')
+  assert.equal(git(dir, 'status', '--porcelain'), '')
+})
+
+test('without --acceptance, and when acceptance/ already exists, no session is started', async () => {
+  const none = fakeClaude(WRITES_SUITE)
+  const plain = target()
+  process.env.LIGHTS_ON_CLAUDE = none.env.LIGHTS_ON_CLAUDE
+  try {
+    await install(plain)
+  } finally {
+    delete process.env.LIGHTS_ON_CLAUDE
+  }
+  assert.equal(none.calls().length, 0)
+
+  const existing = fakeClaude(WRITES_SUITE)
+  const dir = target({ 'SPEC.md': '# Spec\n', 'acceptance/test_mine.py': 'def test_mine():\n    assert 1\n' })
+  await installWithWriter(dir, existing.env)
+  assert.equal(existing.calls().length, 0)
+})
+
+test('a writer that touches anything outside acceptance/ fails the install and leaves no suite', async () => {
+  const dir = target()
+  const fake = fakeClaude(`${WRITES_SUITE}; echo hacked > src.py`)
+  await assert.rejects(installWithWriter(dir, fake.env), /acceptance writer changed files outside acceptance\/.*src\.py/s)
+  assert.ok(!fs.existsSync(path.join(dir, 'acceptance')))
+  assert.ok(!fs.existsSync(path.join(dir, '.factory')))
+})
+
+test('a writer that produces no test files, or fails, fails the install', async () => {
+  await assert.rejects(installWithWriter(target(), fakeClaude('mkdir -p acceptance && echo notes > acceptance/README.md').env), /wrote no acceptance\/test_\*\.py/)
+  await assert.rejects(installWithWriter(target(), fakeClaude('echo boom >&2; exit 3').env), /acceptance writer exited 3/)
+  await assert.rejects(installWithWriter(target(), { LIGHTS_ON_CLAUDE: '/nonexistent/claude' }), /could not start the acceptance writer/)
+})
+
+test('the CLI accepts --acceptance and reports the suite', () => {
+  const dir = target()
+  const fake = fakeClaude(WRITES_SUITE)
+  const result = spawnSync(process.execPath, [path.join(factoryRoot, 'scripts/install-build-mode.ts'), dir, '--demo', DEMO, '--acceptance'], {
+    encoding: 'utf8',
+    env: { ...process.env, ...fake.env },
+  })
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /acceptance suite written by a separate session: 1 file/)
+})

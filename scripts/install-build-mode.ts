@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 
-export type BuildModeOptions = { target: string; factoryRoot: string; profile?: string; demo: string }
+export type BuildModeOptions = { target: string; factoryRoot: string; profile?: string; demo: string; acceptance?: boolean }
 
 type HookEntry = { type: string; command: string; timeout?: number }
 type HookGroup = { matcher?: string; hooks: HookEntry[] }
@@ -152,17 +152,58 @@ function ensureIgnored(target: string): void {
   fs.writeFileSync(file, `${prefix}# build mode\n${missing.join('\n')}\n`)
 }
 
+// A fresh Claude Code session that sees only the spec writes the acceptance suite, so the builder
+// cannot share its reading of the spec. It may write only inside acceptance/ and cannot run anything.
+function writeAcceptance(factoryRoot: string, target: string): number {
+  if (fs.existsSync(path.join(target, 'acceptance'))) return 0
+  const prompt = fs.readFileSync(path.join(factoryRoot, 'build-mode/acceptance/writer-prompt.txt'), 'utf8').trim()
+  const claude = process.env.LIGHTS_ON_CLAUDE ?? 'claude'
+  const args = [
+    '-p',
+    prompt,
+    '--setting-sources',
+    'project',
+    '--allowedTools',
+    'Read,Glob,Grep,Write(acceptance/**),Edit(acceptance/**)',
+    '--disallowedTools',
+    'Bash,Read(src/**),Read(tests/**)',
+    '--max-budget-usd',
+    '5',
+  ]
+  const result = spawnSync(claude, args, { cwd: target, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+  const discard = () => fs.rmSync(path.join(target, 'acceptance'), { recursive: true, force: true })
+  if (result.error) fail(`could not start the acceptance writer (${claude}): ${result.error.message}`)
+  if (result.status !== 0) {
+    discard()
+    fail(`acceptance writer exited ${result.status}: ${(result.stderr || result.stdout).trim().split('\n').slice(-5).join('\n')}`)
+  }
+  const outside = git(target, ['status', '--porcelain', '--untracked-files=all'])
+    .split('\n')
+    .filter(line => line && !line.slice(3).startsWith('acceptance/'))
+  if (outside.length > 0) {
+    discard()
+    fail(`acceptance writer changed files outside acceptance/:\n${outside.join('\n')}`)
+  }
+  const tests = fs.existsSync(path.join(target, 'acceptance')) ? filesUnder(path.join(target, 'acceptance')).filter(f => /(^|\/)test_[^/]*\.py$/.test(f)) : []
+  if (tests.length === 0) {
+    discard()
+    fail('the acceptance writer wrote no acceptance/test_*.py; check that SPEC.md has an Acceptance examples section')
+  }
+  return tests.length
+}
+
 function latestInstall(target: string): string {
   return git(target, ['log', '-1', '--format=%H', `--grep=^${INSTALL_SUBJECT}$`, '--', '.factory/build.json'])
 }
 
-export function installBuildMode(options: BuildModeOptions): { installCommit: string } {
+export function installBuildMode(options: BuildModeOptions): { installCommit: string; acceptanceFiles: number } {
   const profile = options.profile ?? 'python-uv'
   if (!options.demo) fail('a demo command is required (--demo)')
   const target = checkTarget(options.factoryRoot, options.target)
   const buildMode = path.join(options.factoryRoot, 'build-mode')
   if (!fs.existsSync(path.join(buildMode, 'profiles', profile))) fail(`unknown profile "${profile}"`)
 
+  const written = options.acceptance ? writeAcceptance(options.factoryRoot, target) : 0
   copyTree(path.join(buildMode, 'template'), target)
   copyTree(path.join(buildMode, 'profiles', profile, 'gates'), path.join(target, '.factory/gates'))
   const gates = writeConfig(options.factoryRoot, target, profile, options.demo)
@@ -179,24 +220,26 @@ export function installBuildMode(options: BuildModeOptions): { installCommit: st
   }
   const installCommit = latestInstall(target)
   if (!installCommit) fail('no install commit found after installing')
-  return { installCommit }
+  return { installCommit, acceptanceFiles: written }
 }
 
 function main(argv: string[]): number {
   const [target, ...rest] = argv
   const demoIndex = rest.indexOf('--demo')
   const profileIndex = rest.indexOf('--profile')
+  const acceptance = rest.includes('--acceptance')
   const demo = demoIndex >= 0 ? rest[demoIndex + 1] : undefined
   if (!target || !demo) {
-    process.stderr.write('usage: node scripts/install-build-mode.ts <target> --demo "<command>" [--profile python-uv]\n')
+    process.stderr.write('usage: node scripts/install-build-mode.ts <target> --demo "<command>" [--profile python-uv] [--acceptance]\n')
     return 2
   }
   const factoryRoot = path.resolve(import.meta.dirname, '..')
   try {
     const profile = profileIndex >= 0 ? rest[profileIndex + 1] : undefined
-    const { installCommit } = installBuildMode({ target, factoryRoot, demo, profile })
+    const { installCommit, acceptanceFiles } = installBuildMode({ target, factoryRoot, demo, profile, acceptance })
     const dir = realish(target)
     process.stdout.write(`installed build mode into ${dir} at ${installCommit.slice(0, 7)}\n`)
+    if (acceptanceFiles > 0) process.stdout.write(`acceptance suite written by a separate session: ${acceptanceFiles} file${acceptanceFiles === 1 ? '' : 's'}\n`)
     process.stdout.write(`start: cd ${dir} && .factory/start-build.sh\n`)
     return 0
   } catch (error) {
