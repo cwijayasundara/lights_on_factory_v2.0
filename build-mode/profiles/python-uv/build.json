@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "spec": "SPEC.md",
+  "plan": "PLAN.md",
+  "sources": ["src"],
+  "protected": [".claude/", ".factory/build.json", ".factory/gates/", "SPEC.md"],
+  "gates": [
+    { "name": "tests", "run": "python3 .factory/gates/tests.py", "timeoutSeconds": 900 },
+    { "name": "lint", "run": "uv run ruff check src tests && uv run ruff format --check src tests", "timeoutSeconds": 300 },
+    { "name": "types", "run": "uv run mypy --strict src", "timeoutSeconds": 600 },
+    { "name": "crap", "run": "python3 .factory/gates/crap.py", "timeoutSeconds": 900 },
+    { "name": "dry", "run": "python3 .factory/gates/dry.py", "timeoutSeconds": 300 },
+    { "name": "mutate", "run": "python3 .factory/gates/mutate.py", "timeoutSeconds": 3000 }
+  ],
+  "demo": { "name": "demo", "run": "replaced by the installer --demo", "timeoutSeconds": 120 },
+  "acceptedMutants": ".factory/accepted-mutants.md",
+  "limits": { "maxBlockedTasks": 2, "maxNoProgressBlocks": 8, "wallClockHours": 6, "maxAcceptedMutants": 5 },
+  "tools": {
+    "crapper": "6fd92c4c9bcc56efb64a2f8743d5a2993bcfd42d",
+    "dryer": "66ff6d21a42c04afcad89c78a80066176d1294b0",
+    "mutator": "a5a0cb803b66e0cdb8bf471b3b08af701d424a41"
+  }
+}
