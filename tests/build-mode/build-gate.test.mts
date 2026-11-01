@@ -234,3 +234,10 @@ test('a remote without an upstream branch blocks until pushed', () => {
   git(dir, 'push', '-q', '-u', 'origin', 'main')
   assert.equal(stop(dir).out, '')
 })
+
+test('python bytecode caches under a protected directory are ignored', () => {
+  const dir = repo()
+  fs.mkdirSync(path.join(dir, '.factory/gates/__pycache__'), { recursive: true })
+  fs.writeFileSync(path.join(dir, '.factory/gates/__pycache__/_gate.cpython-314.pyc'), 'x')
+  assert.equal(stop(dir).json?.reason, 'write PLAN.md from SPEC.md')
+})

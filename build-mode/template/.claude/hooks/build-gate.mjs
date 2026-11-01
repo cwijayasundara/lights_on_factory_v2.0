@@ -80,7 +80,10 @@ function walk(root, relative) {
   const full = path.join(root, relative)
   if (!fs.existsSync(full)) return []
   if (!fs.statSync(full).isDirectory()) return [relative]
-  return fs.readdirSync(full).flatMap(name => walk(root, path.posix.join(relative, name)))
+  return fs
+    .readdirSync(full)
+    .filter(name => name !== '__pycache__')
+    .flatMap(name => walk(root, path.posix.join(relative, name)))
 }
 
 function checkDone(root, tasks) {

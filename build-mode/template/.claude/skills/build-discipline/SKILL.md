@@ -38,7 +38,7 @@ If PLAN.md does not exist, write it from SPEC.md, then commit and push it before
 
 - A test calls the code the way its user does and checks what that user would see. If it would still pass with every function returning nothing, delete it.
 - Never skip, delete or weaken a test to get green.
-- After each task, run its `verify:` command, then every gate in `.factory/build.json` in order. Use `python3 .factory/gates/mutate.py --changed` while building; the Stop hook runs the full mutation gate at the end.
+- After each task, run its `verify:` command, then every gate in `.factory/build.json` in order. Use `python3 -B .factory/gates/mutate.py --changed` while building; the Stop hook runs the full mutation gate at the end.
 - When a gate fails, fix the code. Split or test a function above CRAP 10. Remove duplication. Kill surviving mutants and cover uncovered ones, or delete dead code.
 - Only a genuinely equivalent mutant may be accepted. Add it to `.factory/accepted-mutants.md` as `- <file>:<line> <from> -> <to> — <why no test can tell them apart>`. At most 5. Each one shows on the report's first line.
 

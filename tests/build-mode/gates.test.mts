@@ -105,3 +105,8 @@ test('lint and types ignore project config the agent could loosen', () => {
   assert.match(run('types'), /mypy --strict --config-file \.factory\/gates\/mypy\.ini src/)
   assert.ok(fs.existsSync(path.join(profile, 'gates/mypy.ini')))
 })
+
+test('python gates run without writing bytecode', () => {
+  const config = JSON.parse(fs.readFileSync(path.join(profile, 'build.json'), 'utf8')) as { gates: { run: string }[] }
+  for (const run of config.gates.map(g => g.run).filter(r => /\.factory\/gates\/\w+\.py/.test(r))) assert.match(run, /^python3 -B \.factory\/gates\//)
+})
