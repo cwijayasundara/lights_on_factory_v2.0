@@ -154,8 +154,7 @@ function ensureIgnored(target: string): void {
 
 // A fresh Claude Code session that sees only the spec writes the acceptance suite, so the builder
 // cannot share its reading of the spec. It may write only inside acceptance/ and cannot run anything.
-function writeAcceptance(factoryRoot: string, target: string): number {
-  if (fs.existsSync(path.join(target, 'acceptance'))) return 0
+export function runAcceptanceWriter(factoryRoot: string, target: string): number {
   const prompt = fs.readFileSync(path.join(factoryRoot, 'build-mode/acceptance/writer-prompt.txt'), 'utf8').trim()
   const claude = process.env.LIGHTS_ON_CLAUDE ?? 'claude'
   const args = [
@@ -169,6 +168,7 @@ function writeAcceptance(factoryRoot: string, target: string): number {
     'Bash,Read(src/**),Read(tests/**)',
     '--max-budget-usd',
     '5',
+    ...(process.env.LIGHTS_ON_ACCEPTANCE_MODEL ? ['--model', process.env.LIGHTS_ON_ACCEPTANCE_MODEL] : []),
   ]
   const result = spawnSync(claude, args, { cwd: target, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
   const discard = () => fs.rmSync(path.join(target, 'acceptance'), { recursive: true, force: true })
@@ -190,6 +190,10 @@ function writeAcceptance(factoryRoot: string, target: string): number {
     fail('the acceptance writer wrote no acceptance/test_*.py; check that SPEC.md has an Acceptance examples section')
   }
   return tests.length
+}
+
+function writeAcceptance(factoryRoot: string, target: string): number {
+  return fs.existsSync(path.join(target, 'acceptance')) ? 0 : runAcceptanceWriter(factoryRoot, target)
 }
 
 function latestInstall(target: string): string {
