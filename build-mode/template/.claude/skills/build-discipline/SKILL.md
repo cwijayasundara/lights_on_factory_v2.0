@@ -51,6 +51,7 @@ Adapted from pstack's autonomous-run playbook (MIT, see NOTICE.md in the factory
 - A plateau is not a stop. Try a different approach.
 - Problems you meet on the way are yours: a flaky test, a broken tool, a missing dev dependency. Fix them.
 - Do not edit `.claude/`, `.factory/build.json`, `.factory/gates/` or SPEC.md. They are protected and the hook checks them.
+- `acceptance/`, if present, holds checks written from the spec by someone else. Run them, never edit them; a failure means your code is wrong, not the check. The hook also rejects any assertion removed, loosened or commented out in a test that existed at install; add new tests instead.
 
 ## Never ask
 

@@ -329,3 +329,81 @@ test('session-start tells a maintain session that questions are allowed', () => 
   assert.match(context, /^Maintain mode/)
   assert.doesNotMatch(context, /PLAN\.md/)
 })
+
+// ---- behaviour layer, part 1: acceptance suite and the no-weakening guard ----
+
+function repoWithFiles(files: Record<string, string>, extra: Record<string, unknown> = {}): string {
+  const dir = repo([{ name: 'tests', run: 'true', timeoutSeconds: 5 }], { testPaths: ['tests/'], ...extra })
+  for (const [name, content] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(dir, name)), { recursive: true })
+    fs.writeFileSync(path.join(dir, name), content)
+  }
+  git(dir, 'add', '-A')
+  git(dir, 'commit', '-q', '--amend', '--no-edit')
+  return dir
+}
+
+const OLD_TEST = 'def test_add():\n    assert add(1, 2) == 3\n    assert add(0, 0) == 0\n'
+const WEAKENED = /^restore the assertions removed or loosened in existing tests/
+
+test('removing an assertion from a test that existed at install blocks', () => {
+  const dir = repoWithFiles({ 'tests/test_add.py': OLD_TEST })
+  fs.writeFileSync(path.join(dir, 'tests/test_add.py'), 'def test_add():\n    assert add(1, 2) == 3\n')
+  const reason = stop(dir).json?.reason ?? ''
+  assert.match(reason, WEAKENED)
+  assert.match(reason, /tests\/test_add\.py: assert add\(0, 0\) == 0/)
+})
+
+test('loosening, deleting or committing the weakening still blocks', () => {
+  const dir = repoWithFiles({ 'tests/test_add.py': OLD_TEST })
+  fs.writeFileSync(path.join(dir, 'tests/test_add.py'), 'def test_add():\n    assert add(1, 2)\n    assert add(0, 0) == 0\n')
+  git(dir, 'commit', '-qam', 'make it pass')
+  assert.match(stop(dir).json?.reason ?? '', WEAKENED)
+  fs.rmSync(path.join(dir, 'tests/test_add.py'))
+  assert.match(stop(dir).json?.reason ?? '', /deleted: tests\/test_add\.py/)
+})
+
+test('new tests and extra assertions beside the old ones are allowed', () => {
+  const dir = repoWithFiles({ 'tests/test_add.py': OLD_TEST })
+  fs.appendFileSync(path.join(dir, 'tests/test_add.py'), '    assert add(2, 2) == 4\n')
+  fs.writeFileSync(path.join(dir, 'tests/test_new.py'), 'def test_new():\n    assert True\n')
+  assert.equal(stop(dir).json?.reason, 'write PLAN.md from SPEC.md')
+})
+
+test('files outside testPaths are not policed', () => {
+  const dir = repoWithFiles({ 'src/check.py': 'assert VALUE == 1\n' })
+  fs.writeFileSync(path.join(dir, 'src/check.py'), 'VALUE = 2\n')
+  assert.equal(stop(dir).json?.reason, 'write PLAN.md from SPEC.md')
+})
+
+test('an acceptance file cannot be edited or added when acceptance/ is protected', () => {
+  const protectedList = ['.claude/', '.factory/build.json', '.factory/gates/', 'SPEC.md', 'acceptance/']
+  const dir = repoWithFiles({ 'acceptance/test_demo.py': 'def test_demo():\n    assert 1\n' }, { protected: protectedList })
+  fs.appendFileSync(path.join(dir, 'acceptance/test_demo.py'), '    pass\n')
+  assert.match(stop(dir).json?.reason ?? '', /^restore the protected files[\s\S]*changed: acceptance\/test_demo\.py/)
+  git(dir, 'checkout', '--', 'acceptance')
+  fs.writeFileSync(path.join(dir, 'acceptance/test_extra.py'), '')
+  assert.match(stop(dir).json?.reason ?? '', /added: acceptance\/test_extra\.py/)
+})
+
+test('the acceptance suite runs at Stop and a failure blocks with its output', () => {
+  const dir = repoWithFiles({}, { acceptance: { name: 'acceptance', run: 'echo spec-says-no; exit 1', timeoutSeconds: 5 } })
+  finishedWithReport(dir)
+  const reason = stop(dir).json?.reason ?? ''
+  assert.match(reason, /^gate acceptance failed/)
+  assert.match(reason, /spec-says-no/)
+})
+
+test('a passing acceptance suite lets the build finish', () => {
+  const dir = repoWithFiles({}, { acceptance: { name: 'acceptance', run: 'true', timeoutSeconds: 5 } })
+  finishedWithReport(dir)
+  assert.equal(stop(dir).out, '')
+})
+
+test('maintain runs the acceptance suite too', () => {
+  const dir = repoWithFiles({}, { acceptance: { name: 'acceptance', run: 'exit 1', timeoutSeconds: 5 } })
+  fs.writeFileSync(path.join(dir, '.factory/phase'), 'maintain\n')
+  git(dir, 'add', '-A')
+  git(dir, 'commit', '-q', '-m', FLIP)
+  assert.match(stop(dir).json?.reason ?? '', /^gate acceptance failed/)
+})

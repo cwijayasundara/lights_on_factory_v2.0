@@ -227,3 +227,25 @@ test('the profile marks tests, lint and types as the fast gates', () => {
   const fast = config.gates.filter((gate: { level?: string }) => gate.level === 'fast').map((gate: { name: string }) => gate.name)
   assert.deepEqual(fast, ['tests', 'lint', 'types'])
 })
+
+test('the profile protects acceptance/ and names the test directories the guard polices', () => {
+  const config = readJson(path.join(factoryRoot, 'build-mode/profiles/python-uv/build.json'))
+  assert.ok(config.protected.includes('acceptance/'))
+  assert.deepEqual(config.testPaths, ['tests/'])
+})
+
+test('an acceptance gate is configured only when the target has an acceptance/ directory', async () => {
+  const without = target()
+  await install(without)
+  assert.equal(readJson(path.join(without, '.factory/build.json')).acceptance, undefined)
+
+  const withSuite = target({ 'SPEC.md': '# Spec\n', 'acceptance/test_demo.py': 'def test_demo():\n    assert 1\n' })
+  await install(withSuite)
+  const config = readJson(path.join(withSuite, '.factory/build.json'))
+  assert.equal(config.acceptance.name, 'acceptance')
+  assert.match(config.acceptance.run, /acceptance\.py/)
+  const settings = readJson(path.join(withSuite, '.claude/settings.json'))
+  const stopTimeout = settings.hooks.Stop[0].hooks[0].timeout
+  const budget = [...config.gates, config.acceptance, config.demo].reduce((sum: number, gate: { timeoutSeconds: number }) => sum + gate.timeoutSeconds, 0)
+  assert.equal(stopTimeout, budget + 300)
+})

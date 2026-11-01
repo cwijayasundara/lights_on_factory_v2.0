@@ -111,9 +111,11 @@ function writeConfig(factoryRoot: string, target: string, profile: string, demo:
   const buildMode = path.join(factoryRoot, 'build-mode')
   const config = JSON.parse(fs.readFileSync(path.join(buildMode, 'profiles', profile, 'build.json'), 'utf8'))
   config.demo.run = demo
+  // The suite is written in the shape phase; with none present there is nothing to run.
+  if (!fs.existsSync(path.join(target, 'acceptance'))) delete config.acceptance
   config.templateHash = templateHash(buildMode, profile)
   writeIfChanged(path.join(target, '.factory/build.json'), `${JSON.stringify(config, null, 2)}\n`)
-  return [...config.gates, config.demo]
+  return [...config.gates, ...(config.acceptance ? [config.acceptance] : []), config.demo]
 }
 
 function mergeSettings(factoryRoot: string, target: string, stopTimeout: number): void {

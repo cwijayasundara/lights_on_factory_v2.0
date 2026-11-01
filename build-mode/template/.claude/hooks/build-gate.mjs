@@ -6,6 +6,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { decide, decideMaintain } from './lib/decide.mjs'
 import { checkLock, parsePlan } from './lib/plan.mjs'
+import { removedAssertions } from './lib/weakening.mjs'
 
 const INSTALL_SUBJECT = 'chore: install build mode'
 const NOT_A_TARGET = 'target is not a git repository with an install commit'
@@ -92,6 +93,23 @@ function walk(root, relative) {
     .flatMap(name => walk(root, path.posix.join(relative, name)))
 }
 
+// Existing tests (those at the install commit) may gain assertions and files, never lose or loosen them.
+function weakenedTests(root, install, testPaths = []) {
+  if (testPaths.length === 0) return ''
+  const files = (git(root, ['ls-tree', '-r', '--name-only', install, '--', ...testPaths]) ?? '').split('\n').filter(Boolean)
+  const problems = []
+  for (const file of files) {
+    const full = path.join(root, file)
+    if (!fs.existsSync(full)) {
+      problems.push(`deleted: ${file}`)
+      continue
+    }
+    const lost = removedAssertions(git(root, ['show', `${install}:${file}`]) ?? '', fs.readFileSync(full, 'utf8'))
+    for (const line of lost) problems.push(`${file}: ${line}`)
+  }
+  return problems.join('\n')
+}
+
 function checkDone(root, tasks) {
   for (const task of tasks.filter(t => t.status === 'done')) {
     const sha = git(root, ['rev-parse', '--verify', '--quiet', `${task.done}^{commit}`])
@@ -124,7 +142,7 @@ function runGate(root, gate) {
 }
 
 function runGates(root, config, { skipDemo }) {
-  const gates = skipDemo ? config.gates : [...config.gates, config.demo]
+  const gates = [...config.gates, ...(config.acceptance ? [config.acceptance] : []), ...(skipDemo ? [] : [config.demo])]
   const results = []
   for (const gate of gates) {
     const result = runGate(root, gate)
@@ -221,7 +239,7 @@ function stop(root, install) {
     const print = fingerprint(root, plan)
     const noProgressBlocks = print === state.lastFingerprint ? (state.noProgressBlocks ?? 0) : 0
     if (phase === 'maintain') {
-      const gates = config.gates.filter(gate => gate.level === 'fast')
+      const gates = [...config.gates.filter(gate => gate.level === 'fast'), ...(config.acceptance ? [config.acceptance] : [])]
       const decision = decideMaintain({
         protectedDiff: protectedDiff(root, install, config.protected),
         runGates: () => {
@@ -237,6 +255,7 @@ function stop(root, install) {
     }
     const decision = decide({
       protectedDiff: protectedDiff(root, install, config.protected),
+      weakened: weakenedTests(root, install, config.testPaths),
       plan,
       lock: lockFor(root, config.plan, plan),
       demoRun: config.demo.run,

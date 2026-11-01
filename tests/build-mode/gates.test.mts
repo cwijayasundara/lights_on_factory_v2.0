@@ -110,3 +110,49 @@ test('python gates run without writing bytecode', () => {
   const config = JSON.parse(fs.readFileSync(path.join(profile, 'build.json'), 'utf8')) as { gates: { run: string }[] }
   for (const run of config.gates.map(g => g.run).filter(r => /\.factory\/gates\/\w+\.py/.test(r))) assert.match(run, /^python3 -B \.factory\/gates\//)
 })
+
+// A fake `uv` that ignores its arguments and writes a junit report with the given counts.
+function fakeUv(dir: string, exit: number, tests: number, skipped: number): string {
+  const bin = path.join(dir, 'bin')
+  fs.mkdirSync(bin, { recursive: true })
+  const xml = `<testsuites><testsuite tests="${tests}" skipped="${skipped}"/></testsuites>`
+  fs.writeFileSync(
+    path.join(bin, 'uv'),
+    `#!/bin/sh\nfor a in "$@"; do case "$a" in --junitxml=*) f="\${a#--junitxml=}"; mkdir -p "$(dirname "$f")"; echo '${xml}' > "$f";; esac; done\necho "ran pytest"\nexit ${exit}\n`,
+    { mode: 0o755 },
+  )
+  return `${bin}:${process.env.PATH}`
+}
+
+test('acceptance fails closed when acceptance/ is missing', () => {
+  const dir = project()
+  const result = gate(dir, 'acceptance', { PATH: fakeUv(dir, 0, 3, 0) })
+  assert.equal(result.status, 1)
+  assert.match(result.out, /FAIL: acceptance\/ is missing/)
+})
+
+test('acceptance passes only with tests run, none skipped, and pytest green', () => {
+  const dir = project()
+  fs.mkdirSync(path.join(dir, 'acceptance'))
+  assert.match(gate(dir, 'acceptance', { PATH: fakeUv(dir, 0, 3, 0) }).out, /PASS: 3 acceptance tests, none skipped/)
+  const skipped = gate(dir, 'acceptance', { PATH: fakeUv(dir, 0, 3, 1) })
+  assert.equal(skipped.status, 1)
+  assert.match(skipped.out, /1 skipped acceptance test/)
+  const empty = gate(dir, 'acceptance', { PATH: fakeUv(dir, 0, 0, 0) })
+  assert.equal(empty.status, 1)
+  assert.match(empty.out, /ran no tests/)
+  const red = gate(dir, 'acceptance', { PATH: fakeUv(dir, 1, 3, 0) })
+  assert.equal(red.status, 1)
+  assert.match(red.out, /acceptance suite exited 1/)
+})
+
+test('a stale acceptance report cannot pass the gate', () => {
+  const dir = project()
+  fs.mkdirSync(path.join(dir, 'acceptance'))
+  fs.mkdirSync(path.join(dir, 'target'))
+  fs.writeFileSync(path.join(dir, 'target/acceptance.xml'), '<testsuite tests="9" skipped="0"/>')
+  const bin = path.join(dir, 'bin')
+  fs.mkdirSync(bin)
+  fs.writeFileSync(path.join(bin, 'uv'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  assert.match(gate(dir, 'acceptance', { PATH: `${bin}:${process.env.PATH}` }).out, /FAIL: pytest wrote no report/)
+})

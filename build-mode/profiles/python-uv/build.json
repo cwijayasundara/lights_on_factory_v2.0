@@ -3,7 +3,8 @@
   "spec": "SPEC.md",
   "plan": "PLAN.md",
   "sources": ["src"],
-  "protected": [".claude/", ".factory/build.json", ".factory/gates/", "SPEC.md"],
+  "protected": [".claude/", ".factory/build.json", ".factory/gates/", "SPEC.md", "acceptance/"],
+  "testPaths": ["tests/"],
   "gates": [
     { "name": "tests", "level": "fast", "run": "python3 -B .factory/gates/tests.py", "timeoutSeconds": 900 },
     { "name": "lint", "level": "fast", "run": "uv run ruff check --isolated src tests && uv run ruff format --isolated --check src tests", "timeoutSeconds": 300 },
@@ -12,6 +13,7 @@
     { "name": "dry", "level": "full", "run": "python3 -B .factory/gates/dry.py", "timeoutSeconds": 300 },
     { "name": "mutate", "level": "full", "run": "python3 -B .factory/gates/mutate.py", "timeoutSeconds": 3000 }
   ],
+  "acceptance": { "name": "acceptance", "run": "python3 -B .factory/gates/acceptance.py", "timeoutSeconds": 600 },
   "demo": { "name": "demo", "run": "replaced by the installer --demo", "timeoutSeconds": 120 },
   "acceptedMutants": ".factory/accepted-mutants.md",
   "limits": { "maxBlockedTasks": 2, "maxNoProgressBlocks": 8, "wallClockHours": 6, "maxAcceptedMutants": 5 },
