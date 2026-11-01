@@ -1,0 +1,1 @@
+Build this project. Invoke the build-discipline skill first. SPEC.md is the approved spec. If PLAN.md does not exist, write it; otherwise continue it. Never ask the operator anything. Keep going until the Stop hook lets you stop.
