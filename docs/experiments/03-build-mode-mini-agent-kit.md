@@ -8,7 +8,7 @@ Given only an approved `SPEC.md` and the build-mode install, does one local Clau
 
 ## Setup
 
-- Repo: `cwijayasundara/mini-agent-kit` (public), `main` at `8b99135 chore: install build mode` (upgraded after the review fixes). It holds `SPEC.md` (from `examples/mini-agent-kit/SPEC.md`), a README, `.gitignore` and the build-mode install.
+- Repo: `cwijayasundara/mini-agent-kit` (public), `main` at `0029c64 chore: install build mode` (upgraded after the review fixes). It holds `SPEC.md` (from `examples/mini-agent-kit/SPEC.md`), a README, `.gitignore` and the build-mode install.
 - Isolation: `--setting-sources project` (proved in `docs/build-mode/gate-tools.md`).
 - Gate tools are cloned at their pins into `~/.cache/lights-on/gate-tools/` on the first gate run.
 
