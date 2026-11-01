@@ -7,6 +7,7 @@ import path from 'node:path'
 import { decide } from './lib/decide.mjs'
 import { checkLock, parsePlan } from './lib/plan.mjs'
 
+const INSTALL_SUBJECT = 'chore: install build mode'
 const NOT_A_TARGET = 'target is not a git repository with an install commit'
 const REPORT = 'BUILD-REPORT.md'
 const NOT_CODE = [REPORT, 'DECISIONS.md', 'BLOCKED.md', 'PLAN.md']
@@ -32,7 +33,8 @@ function git(root, args) {
 function findRoot(cwd) {
   const root = fs.existsSync(cwd) ? git(cwd, ['rev-parse', '--show-toplevel']) : null
   if (!root) throw new NotATarget(NOT_A_TARGET)
-  const install = (git(root, ['log', '--diff-filter=A', '--format=%H', '--', '.factory/build.json']) ?? '').split('\n').filter(Boolean).at(-1)
+  // The latest install (or reinstall) commit is the baseline for the protected files.
+  const install = (git(root, ['log', '-1', '--format=%H', `--grep=^${INSTALL_SUBJECT}$`, '--', '.factory/build.json']) ?? '').trim()
   if (!install) throw new NotATarget(NOT_A_TARGET)
   return { root, install }
 }

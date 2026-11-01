@@ -1,0 +1,51 @@
+{
+  "$comment": "Merged into each build-mode target's .claude/settings.json by scripts/install-build-mode.ts. The Stop timeout is set by the installer from the gate budgets.",
+  "permissions": {
+    "allow": [
+      "Bash(uv *)",
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(pytest *)",
+      "Bash(ruff *)",
+      "Bash(mypy *)",
+      "Bash(crapper *)",
+      "Bash(dryer *)",
+      "Bash(mutator *)",
+      "Bash(git *)",
+      "Bash(gh repo view*)",
+      "Bash(gh api *)",
+      "Bash(ls *)",
+      "Bash(mkdir *)"
+    ],
+    "deny": [
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push * --force*)",
+      "Bash(git push * -f*)",
+      "Bash(git rebase *)",
+      "Bash(git reset --hard*)",
+      "Bash(git commit --amend*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/build-gate.mjs\" session-start", "timeout": 30 }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/build-gate.mjs\" stop", "timeout": 3600 }]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/protect-paths.mjs\"", "timeout": 10 }]
+      }
+    ]
+  }
+}
