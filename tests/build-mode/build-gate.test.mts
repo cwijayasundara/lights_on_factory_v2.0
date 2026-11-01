@@ -241,3 +241,91 @@ test('python bytecode caches under a protected directory are ignored', () => {
   fs.writeFileSync(path.join(dir, '.factory/gates/__pycache__/_gate.cpython-314.pyc'), 'x')
   assert.equal(stop(dir).json?.reason, 'write PLAN.md from SPEC.md')
 })
+
+// ---- lifecycle: build -> maintain ----
+
+const FLIP = 'chore: build complete, enter maintain'
+const level = (gates: Gate[], levels: string[]) => gates.map((gate, i) => ({ ...gate, level: levels[i] }))
+
+function completedBuild(gates: Gate[] = [{ name: 'tests', run: 'true', timeoutSeconds: 5 }]): string {
+  const dir = repo(level(gates, gates.map(() => 'fast')) as Gate[])
+  finishedWithReport(dir)
+  return dir
+}
+
+function readLog(dir: string) {
+  return fs.readFileSync(path.join(dir, '.factory/hook-log.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
+}
+
+test('allowing COMPLETE flips the repository to maintain in its own commit', () => {
+  const dir = completedBuild()
+  assert.equal(stop(dir).out, '')
+  assert.equal(fs.readFileSync(path.join(dir, '.factory/phase'), 'utf8').trim(), 'maintain')
+  assert.equal(git(dir, 'log', '-1', '--format=%s'), FLIP)
+  assert.equal(git(dir, 'status', '--porcelain'), '')
+})
+
+test('a post-COMPLETE session is not stalled by an old clock or a stale fingerprint', () => {
+  const dir = completedBuild()
+  assert.equal(stop(dir).out, '')
+  fs.writeFileSync(path.join(dir, '.factory/build-state.json'), JSON.stringify({ startedAt: new Date(Date.now() - 9 * 3600_000).toISOString(), noProgressBlocks: 20 }))
+  for (let i = 0; i < 4; i += 1) assert.equal(stop(dir).out, '')
+  assert.equal(fs.readFileSync(path.join(dir, 'BUILD-REPORT.md'), 'utf8'), 'COMPLETE\n')
+  assert.ok(readLog(dir).every(entry => entry.header !== 'STALLED'))
+})
+
+test('maintain blocks on a failing fast gate and ignores full gates, the plan and the report', () => {
+  const dir = repo(level([{ name: 'tests', run: 'echo red-line; exit 1', timeoutSeconds: 5 }, { name: 'mutate', run: 'exit 1', timeoutSeconds: 5 }], ['fast', 'full']) as Gate[])
+  fs.writeFileSync(path.join(dir, '.factory/phase'), 'maintain\n')
+  git(dir, 'add', '-A')
+  git(dir, 'commit', '-q', '-m', FLIP)
+  const reason = stop(dir).json?.reason ?? ''
+  assert.match(reason, /^gate tests failed/)
+  assert.match(reason, /red-line/)
+  const green = repo(level([{ name: 'tests', run: 'true', timeoutSeconds: 5 }, { name: 'mutate', run: 'exit 1', timeoutSeconds: 5 }], ['fast', 'full']) as Gate[])
+  fs.writeFileSync(path.join(green, '.factory/phase'), 'maintain\n')
+  git(green, 'add', '-A')
+  git(green, 'commit', '-q', '-m', FLIP)
+  assert.equal(stop(green).out, '')
+  assert.equal(fs.existsSync(path.join(green, 'BUILD-REPORT.md')), false)
+})
+
+test('maintain still rejects edits to protected files', () => {
+  const dir = completedBuild()
+  stop(dir)
+  fs.appendFileSync(path.join(dir, 'SPEC.md'), 'easier now\n')
+  assert.match(stop(dir).json?.reason ?? '', /^restore the protected files/)
+})
+
+test('a phase file with no flip commit does not escape the build gates', () => {
+  const dir = repo()
+  fs.writeFileSync(path.join(dir, '.factory/phase'), 'maintain\n')
+  git(dir, 'add', '-A')
+  git(dir, 'commit', '-q', '-m', 'sneaky')
+  assert.equal(stop(dir).json?.reason, 'write PLAN.md from SPEC.md')
+})
+
+test('STALLED is not stacked, and never overwrites a COMPLETE report', () => {
+  const dir = repo()
+  fs.writeFileSync(path.join(dir, 'BUILD-REPORT.md'), 'draft\n')
+  for (let round = 0; round < 3; round += 1) {
+    fs.writeFileSync(path.join(dir, '.factory/build-state.json'), JSON.stringify({ startedAt: new Date(Date.now() - 7 * 3600_000).toISOString() }))
+    stop(dir)
+  }
+  const report = fs.readFileSync(path.join(dir, 'BUILD-REPORT.md'), 'utf8')
+  assert.equal(report.split('STALLED').length - 1, 1)
+  assert.match(report, /\n\ndraft\n$/)
+  fs.writeFileSync(path.join(dir, 'BUILD-REPORT.md'), 'COMPLETE\n\nAll good.\n')
+  fs.writeFileSync(path.join(dir, '.factory/build-state.json'), JSON.stringify({ startedAt: new Date(Date.now() - 7 * 3600_000).toISOString() }))
+  stop(dir)
+  assert.equal(fs.readFileSync(path.join(dir, 'BUILD-REPORT.md'), 'utf8'), 'COMPLETE\n\nAll good.\n')
+})
+
+test('session-start tells a maintain session that questions are allowed', () => {
+  const dir = completedBuild()
+  stop(dir)
+  const out = spawnSync(process.execPath, [hook, 'session-start'], { input: JSON.stringify({ cwd: dir }), encoding: 'utf8' })
+  const context = JSON.parse(out.stdout).hookSpecificOutput.additionalContext as string
+  assert.match(context, /^Maintain mode/)
+  assert.doesNotMatch(context, /PLAN\.md/)
+})

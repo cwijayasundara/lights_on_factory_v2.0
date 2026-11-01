@@ -4,17 +4,23 @@
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
-import { decide } from './lib/decide.mjs'
+import { decide, decideMaintain } from './lib/decide.mjs'
 import { checkLock, parsePlan } from './lib/plan.mjs'
 
 const INSTALL_SUBJECT = 'chore: install build mode'
 const NOT_A_TARGET = 'target is not a git repository with an install commit'
 const REPORT = 'BUILD-REPORT.md'
 const NOT_CODE = [REPORT, 'DECISIONS.md', 'BLOCKED.md', 'PLAN.md']
+const PHASE = '.factory/phase'
+const FLIP_SUBJECT = 'chore: build complete, enter maintain'
 const STATE = '.factory/build-state.json'
 const LOG = '.factory/hook-log.jsonl'
 const DEFAULT_NO_PROGRESS = 8
 const VERIFY_TIMEOUT_SECONDS = 600
+
+const BUILD_CONTEXT = 'Build mode: invoke the build-discipline skill now, then continue PLAN.md from its next open task.'
+const MAINTAIN_CONTEXT =
+  'Maintain mode: the build is complete and the operator is at the keyboard. Questions are allowed. Make focused changes, one commit each. The Stop hook runs the fast gates only; do not write BUILD-REPORT.md.'
 
 class NotATarget extends Error {}
 
@@ -165,9 +171,32 @@ function fingerprint(root, plan) {
   return `${head} ${statuses}`
 }
 
+// `maintain` counts only if the hook's own flip commit touched the phase file, so editing
+// the file alone cannot switch the build gates off.
+function readPhase(root) {
+  const text = fs.existsSync(path.join(root, PHASE)) ? fs.readFileSync(path.join(root, PHASE), 'utf8').trim() : 'build'
+  if (text !== 'maintain') return 'build'
+  return git(root, ['log', '-1', '--format=%H', `--grep=^${FLIP_SUBJECT}$`, '--', PHASE]) ? 'maintain' : 'build'
+}
+
+function flipToMaintain(root) {
+  fs.writeFileSync(path.join(root, PHASE), 'maintain\n')
+  const committed = git(root, ['add', '--', PHASE]) !== null && git(root, ['commit', '-q', '-m', FLIP_SUBJECT, '--', PHASE]) !== null
+  if (!committed) {
+    git(root, ['reset', '-q', '--', PHASE])
+    fs.rmSync(path.join(root, PHASE), { force: true })
+    log(root, { decision: 'note', reason: 'could not commit the flip to maintain' })
+  }
+}
+
+const STAMP = /^(STALLED\n\nStopped by the build-mode loop guard: .*\n\n)+/
+
 function stamp(root, reason) {
   const file = path.join(root, REPORT)
-  const existing = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+  const current = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+  // A finished report is the record of the build; a later stall must not bury it.
+  if (current.startsWith('COMPLETE')) return
+  const existing = current.replace(STAMP, '')
   fs.writeFileSync(file, `STALLED\n\nStopped by the build-mode loop guard: ${reason}.\n\n${existing}`)
 }
 
@@ -182,6 +211,7 @@ function saveState(root, state) {
 }
 
 function stop(root, install) {
+  const phase = readPhase(root)
   const state = readJson(path.join(root, STATE), {})
   state.startedAt ??= new Date().toISOString()
   try {
@@ -190,6 +220,21 @@ function stop(root, install) {
     const plan = fs.existsSync(planFile) ? parsePlan(fs.readFileSync(planFile, 'utf8')) : null
     const print = fingerprint(root, plan)
     const noProgressBlocks = print === state.lastFingerprint ? (state.noProgressBlocks ?? 0) : 0
+    if (phase === 'maintain') {
+      const gates = config.gates.filter(gate => gate.level === 'fast')
+      const decision = decideMaintain({
+        protectedDiff: protectedDiff(root, install, config.protected),
+        runGates: () => {
+          const results = []
+          for (const gate of gates) {
+            results.push(runGate(root, gate))
+            if (!results.at(-1).ok) break
+          }
+          return results
+        },
+      })
+      return finish(root, state, decision, 'maintain', 0, phase)
+    }
     const decision = decide({
       protectedDiff: protectedDiff(root, install, config.protected),
       plan,
@@ -203,7 +248,7 @@ function stop(root, install) {
       limits: config.limits,
       guard: { noProgressBlocks, elapsedHours: (Date.now() - Date.parse(state.startedAt)) / 3600_000 },
     })
-    return finish(root, state, decision, print, noProgressBlocks)
+    return finish(root, state, decision, print, noProgressBlocks, phase)
   } catch (error) {
     const noProgressBlocks = state.lastFingerprint === 'error' ? (state.noProgressBlocks ?? 0) : 0
     const limit = readJson(path.join(root, '.factory/build.json'), {})?.limits?.maxNoProgressBlocks ?? DEFAULT_NO_PROGRESS
@@ -211,31 +256,28 @@ function stop(root, install) {
       noProgressBlocks >= limit
         ? { kind: 'allow', header: 'STALLED', reason: `build-gate error ${noProgressBlocks} times in a row: ${error.message}` }
         : { kind: 'block', reason: `build-gate error: ${error.message}` }
-    return finish(root, state, decision, 'error', noProgressBlocks)
+    return finish(root, state, decision, 'error', noProgressBlocks, phase)
   }
 }
 
-function finish(root, state, decision, print, noProgressBlocks) {
+function finish(root, state, decision, print, noProgressBlocks, phase) {
   if (decision.kind === 'block') {
     saveState(root, { ...state, lastFingerprint: print, noProgressBlocks: noProgressBlocks + 1 })
     log(root, { decision: 'block', reason: decision.reason, fingerprint: print })
     return { decision: 'block', reason: decision.reason }
   }
-  if (decision.header === 'STALLED') stamp(root, decision.reason)
+  if (decision.header === 'STALLED' && phase === 'build') stamp(root, decision.reason)
   saveState(root, { ...state, lastFingerprint: print, noProgressBlocks: 0 })
-  log(root, { decision: 'allow', header: decision.header, reason: decision.reason, fingerprint: print })
+  log(root, { decision: 'allow', phase, header: decision.header, reason: decision.reason, fingerprint: print })
+  if (phase === 'build' && decision.header?.startsWith('COMPLETE')) flipToMaintain(root)
   return null
 }
 
 function sessionStart(root) {
   const state = readJson(path.join(root, STATE), {})
-  if (!state.startedAt) saveState(root, { ...state, startedAt: new Date().toISOString() })
-  return {
-    hookSpecificOutput: {
-      hookEventName: 'SessionStart',
-      additionalContext: 'Build mode: invoke the build-discipline skill now, then continue PLAN.md from its next open task.',
-    },
-  }
+  const maintain = readPhase(root) === 'maintain'
+  if (!maintain && !state.startedAt) saveState(root, { ...state, startedAt: new Date().toISOString() })
+  return { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: maintain ? MAINTAIN_CONTEXT : BUILD_CONTEXT } }
 }
 
 function main() {

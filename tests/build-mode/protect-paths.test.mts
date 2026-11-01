@@ -71,3 +71,8 @@ test('allows everything outside a build-mode target', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'plain-'))
   assert.equal(check(dir, 'Write', { file_path: path.join(dir, 'SPEC.md') }), null)
 })
+
+test('denies edits to .factory/phase even though build.json does not list it', () => {
+  const dir = target()
+  denied(dir, 'Write', { file_path: path.join(dir, '.factory/phase') }, '.factory/phase')
+})

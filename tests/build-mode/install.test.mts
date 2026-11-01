@@ -209,3 +209,21 @@ test('a reinstall that changes only a hook file becomes the new install commit',
   assert.equal(git(dir, 'rev-parse', 'HEAD'), second.installCommit)
   assert.equal(JSON.parse(runStop(dir).stdout).reason, 'write PLAN.md from SPEC.md')
 })
+
+test('the installer writes phase build once and leaves a later phase alone', async () => {
+  const dir = target()
+  await install(dir)
+  const phase = path.join(dir, '.factory/phase')
+  assert.equal(fs.readFileSync(phase, 'utf8'), 'build\n')
+  fs.writeFileSync(phase, 'maintain\n')
+  git(dir, 'add', '-A')
+  git(dir, 'commit', '-q', '-m', 'chore: build complete, enter maintain')
+  await install(dir)
+  assert.equal(fs.readFileSync(phase, 'utf8'), 'maintain\n')
+})
+
+test('the profile marks tests, lint and types as the fast gates', () => {
+  const config = readJson(path.join(factoryRoot, 'build-mode/profiles/python-uv/build.json'))
+  const fast = config.gates.filter((gate: { level?: string }) => gate.level === 'fast').map((gate: { name: string }) => gate.name)
+  assert.deepEqual(fast, ['tests', 'lint', 'types'])
+})

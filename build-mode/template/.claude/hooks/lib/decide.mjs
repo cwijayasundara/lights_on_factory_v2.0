@@ -32,6 +32,14 @@ export function decide(ctx) {
   return { kind: 'allow', header }
 }
 
+// Maintain phase: the operator is at the keyboard. No clock, no plan, no report; protected files and fast gates only.
+export function decideMaintain(ctx) {
+  if (ctx.protectedDiff) return block(`restore the protected files; they must match the install commit:\n${ctx.protectedDiff}`)
+  const failed = ctx.runGates().find(gate => !gate.ok)
+  if (failed) return block(`gate ${failed.name} failed; fix it and keep going:\n${failed.tail}`)
+  return { kind: 'allow', header: 'MAINTAIN' }
+}
+
 function guard(ctx, tasks) {
   const { limits } = ctx
   if (ctx.guard.noProgressBlocks >= limits.maxNoProgressBlocks) {

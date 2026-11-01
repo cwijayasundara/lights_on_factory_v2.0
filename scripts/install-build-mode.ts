@@ -165,6 +165,8 @@ export function installBuildMode(options: BuildModeOptions): { installCommit: st
   copyTree(path.join(buildMode, 'profiles', profile, 'gates'), path.join(target, '.factory/gates'))
   const gates = writeConfig(options.factoryRoot, target, profile, options.demo)
   if (!fs.existsSync(path.join(target, '.factory/isolation'))) fs.writeFileSync(path.join(target, '.factory/isolation'), 'setting-sources\n')
+  // The phase belongs to the target: a reinstall into a maintain repository keeps it.
+  if (!fs.existsSync(path.join(target, '.factory/phase'))) fs.writeFileSync(path.join(target, '.factory/phase'), 'build\n')
   const stopTimeout = gates.reduce((sum, gate) => sum + gate.timeoutSeconds, 0) + STOP_SLACK_SECONDS
   mergeSettings(options.factoryRoot, target, stopTimeout)
   ensureIgnored(target)

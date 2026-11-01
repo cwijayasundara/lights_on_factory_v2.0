@@ -5,12 +5,12 @@
   "sources": ["src"],
   "protected": [".claude/", ".factory/build.json", ".factory/gates/", "SPEC.md"],
   "gates": [
-    { "name": "tests", "run": "python3 -B .factory/gates/tests.py", "timeoutSeconds": 900 },
-    { "name": "lint", "run": "uv run ruff check --isolated src tests && uv run ruff format --isolated --check src tests", "timeoutSeconds": 300 },
-    { "name": "types", "run": "uv run mypy --strict --config-file .factory/gates/mypy.ini src", "timeoutSeconds": 600 },
-    { "name": "crap", "run": "python3 -B .factory/gates/crap.py", "timeoutSeconds": 900 },
-    { "name": "dry", "run": "python3 -B .factory/gates/dry.py", "timeoutSeconds": 300 },
-    { "name": "mutate", "run": "python3 -B .factory/gates/mutate.py", "timeoutSeconds": 3000 }
+    { "name": "tests", "level": "fast", "run": "python3 -B .factory/gates/tests.py", "timeoutSeconds": 900 },
+    { "name": "lint", "level": "fast", "run": "uv run ruff check --isolated src tests && uv run ruff format --isolated --check src tests", "timeoutSeconds": 300 },
+    { "name": "types", "level": "fast", "run": "uv run mypy --strict --config-file .factory/gates/mypy.ini src", "timeoutSeconds": 600 },
+    { "name": "crap", "level": "full", "run": "python3 -B .factory/gates/crap.py", "timeoutSeconds": 900 },
+    { "name": "dry", "level": "full", "run": "python3 -B .factory/gates/dry.py", "timeoutSeconds": 300 },
+    { "name": "mutate", "level": "full", "run": "python3 -B .factory/gates/mutate.py", "timeoutSeconds": 3000 }
   ],
   "demo": { "name": "demo", "run": "replaced by the installer --demo", "timeoutSeconds": 120 },
   "acceptedMutants": ".factory/accepted-mutants.md",

@@ -22,6 +22,9 @@ function findRoot(start) {
   }
 }
 
+// The hook owns the phase; the agent may not flip it, whatever build.json lists.
+const ALWAYS = ['.factory/phase']
+
 function isProtected(relative, entries) {
   return entries.some(entry => (entry.endsWith('/') ? `${relative}/`.startsWith(entry) : relative === entry))
 }
@@ -34,7 +37,7 @@ function main() {
   if (!root || !file) return
   const config = JSON.parse(fs.readFileSync(path.join(root, '.factory/build.json'), 'utf8'))
   const relative = path.relative(root, path.resolve(cwd, file)).split(path.sep).join('/')
-  if (relative.startsWith('..') || !isProtected(relative, config.protected ?? [])) return
+  if (relative.startsWith('..') || !isProtected(relative, [...ALWAYS, ...(config.protected ?? [])])) return
   const output = {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
