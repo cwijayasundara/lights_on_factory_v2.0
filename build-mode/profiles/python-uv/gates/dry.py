@@ -3,14 +3,18 @@
 import re
 import sys
 
-from _gate import ROOT, fail, ok, run, show, targets, tool
+from _gate import ROOT, clear, fail, ok, run, show, targets, tool
 
+clear(".metrics/dry.edn")
 result = run([str(tool("dryer")), "--threshold", "0.8", *targets(sys.argv[1:])])
 if result.returncode != 0:
     show(result)
     fail(f"dryer exited {result.returncode}")
-edn = (ROOT / ".metrics/dry.edn").read_text()
-scores = [float(s) for s in re.findall(r":score\s+([0-9.]+)", edn)]
+report = ROOT / ".metrics/dry.edn"
+if not report.exists():
+    show(result)
+    fail("dryer wrote no report (.metrics/dry.edn)")
+scores = [float(s) for s in re.findall(r":score\s+([0-9.]+)", report.read_text())]
 pairs = [s for s in scores if s >= 0.8]
 if pairs:
     print(

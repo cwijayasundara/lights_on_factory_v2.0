@@ -14,6 +14,7 @@ const NOT_CODE = [REPORT, 'DECISIONS.md', 'BLOCKED.md', 'PLAN.md']
 const STATE = '.factory/build-state.json'
 const LOG = '.factory/hook-log.jsonl'
 const DEFAULT_NO_PROGRESS = 8
+const VERIFY_TIMEOUT_SECONDS = 600
 
 class NotATarget extends Error {}
 
@@ -26,7 +27,12 @@ function readInput() {
 }
 
 function git(root, args) {
-  const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+  const result = spawnSync('git', args, {
+    cwd: root,
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+    env: { ...process.env, GIT_NO_REPLACE_OBJECTS: '1' },
+  })
   return result.status === 0 ? result.stdout.trim() : null
 }
 
@@ -51,10 +57,42 @@ function tail(text, lines = 40) {
   return text.trim().split('\n').slice(-lines).join('\n')
 }
 
+// Compare protected files by content against the install commit, so index tricks
+// (assume-unchanged, skip-worktree, clean filters) cannot hide an edit.
 function protectedDiff(root, install, paths) {
-  const diff = git(root, ['diff', '--stat', install, '--', ...paths]) ?? ''
-  const status = git(root, ['status', '--porcelain', '--', ...paths]) ?? ''
-  return [diff, status].filter(Boolean).join('\n')
+  const committed = new Map()
+  const listing = git(root, ['ls-tree', '-r', install, '--', ...paths]) ?? ''
+  for (const line of listing.split('\n').filter(Boolean)) {
+    const [meta, file] = line.split('\t')
+    committed.set(file, meta.split(' ')[2])
+  }
+  const present = new Set(paths.flatMap(entry => walk(root, entry.replace(/\/$/, ''))))
+  const problems = []
+  for (const [file, blob] of committed) {
+    if (!present.has(file)) problems.push(`deleted: ${file}`)
+    else if (git(root, ['hash-object', '--no-filters', file]) !== blob) problems.push(`changed: ${file}`)
+  }
+  for (const file of present) if (!committed.has(file)) problems.push(`added: ${file}`)
+  return problems.sort().join('\n')
+}
+
+function walk(root, relative) {
+  const full = path.join(root, relative)
+  if (!fs.existsSync(full)) return []
+  if (!fs.statSync(full).isDirectory()) return [relative]
+  return fs.readdirSync(full).flatMap(name => walk(root, path.posix.join(relative, name)))
+}
+
+function checkDone(root, tasks) {
+  for (const task of tasks.filter(t => t.status === 'done')) {
+    const sha = git(root, ['rev-parse', '--verify', '--quiet', `${task.done}^{commit}`])
+    if (!sha || git(root, ['merge-base', '--is-ancestor', sha, 'HEAD']) === null) {
+      return `task ${task.n} is marked done but done: ${task.done} is not a commit on this branch`
+    }
+    const result = runGate(root, { name: `task ${task.n}`, run: task.verify, timeoutSeconds: VERIFY_TIMEOUT_SECONDS })
+    if (!result.ok) return `task ${task.n} is marked done but its verify: fails`
+  }
+  return null
 }
 
 // The lock baseline is the earliest committed PLAN.md that parses.
@@ -90,8 +128,16 @@ function runGates(root, config, { skipDemo }) {
 function uncommitted(root) {
   const status = git(root, ['status', '--porcelain']) ?? ''
   const upstream = git(root, ['rev-parse', '--abbrev-ref', '@{u}'])
-  const ahead = upstream ? Number(git(root, ['rev-list', '--count', '@{u}..HEAD']) ?? '0') : 0
-  return [status, ahead > 0 ? `${ahead} commit(s) not pushed to ${upstream}` : ''].filter(Boolean).join('\n')
+  const remote = (git(root, ['remote']) ?? '').split('\n').filter(Boolean)[0]
+  const branch = git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])
+  let push = ''
+  if (upstream) {
+    const ahead = Number(git(root, ['rev-list', '--count', '@{u}..HEAD']) ?? '0')
+    if (ahead > 0) push = `${ahead} commit(s) not pushed to ${upstream}`
+  } else if (remote) {
+    push = `no upstream branch; push with: git push -u ${remote} ${branch}`
+  }
+  return [status, push].filter(Boolean).join('\n')
 }
 
 function reportState(root) {
@@ -148,6 +194,7 @@ function stop(root, install) {
       demoRun: config.demo.run,
       runGates: options => runGates(root, config, options),
       uncommitted: uncommitted(root),
+      checkDone: () => checkDone(root, plan.tasks),
       report: reportState(root),
       acceptedMutants: countAccepted(root, config),
       limits: config.limits,

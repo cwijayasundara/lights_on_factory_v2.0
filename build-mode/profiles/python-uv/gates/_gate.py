@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -18,7 +19,11 @@ def tool(name: str) -> Path:
     """Path to a pinned unclebob gate tool's launcher, cloning the pins on first use.
 
     mutator needs crapper checked out beside it, so all three share one directory per pin set.
+    LIGHTS_ON_TOOL_<NAME> points at a launcher directly, for tests and local tool checkouts.
     """
+    override = os.environ.get(f"LIGHTS_ON_TOOL_{name.upper()}")
+    if override:
+        return Path(override)
     pins = config()["tools"]
     home = Path(
         os.environ.get("LIGHTS_ON_TOOLS", Path.home() / ".cache/lights-on/gate-tools")
@@ -53,6 +58,16 @@ def targets(argv: list[str]) -> list[str]:
     """The arguments for a tool, scoped to build.json "sources" unless paths were given."""
     paths = [a for a in argv if not a.startswith("-")]
     return argv if paths else [*argv, *config()["sources"]]
+
+
+def clear(*relative: str) -> None:
+    """Remove earlier tool output so a stale report can never pass a gate."""
+    for item in relative:
+        path = ROOT / item
+        if path.is_dir():
+            shutil.rmtree(path)
+        elif path.exists():
+            path.unlink()
 
 
 def run(cmd: list[str], must: bool = False) -> subprocess.CompletedProcess:

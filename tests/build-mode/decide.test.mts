@@ -39,6 +39,7 @@ function ctx(overrides: Record<string, unknown> = {}) {
       return options.skipDemo ? gates.filter(g => g.name !== 'demo') : gates
     },
     uncommitted: '',
+    checkDone: () => null,
     report: { exists: true, fresh: true, header: 'COMPLETE' },
     acceptedMutants: 0,
     limits,
@@ -104,6 +105,21 @@ test('PARTIAL leaves out the demo gate only when the demo task is blocked or ski
   })
   assert.deepEqual(decide(demoDone.context), { kind: 'allow', header: 'PARTIAL' })
   assert.deepEqual(demoDone.calls, [{ skipDemo: false }])
+})
+
+test('checks commit state and the report before running gates', () => {
+  const dirty = ctx({ uncommitted: ' M src/app.py' })
+  assert.match(decide(dirty.context).reason, /^commit and push your work/)
+  assert.equal(dirty.calls.length, 0)
+  const noReport = ctx({ report: { exists: false, fresh: false, header: null } })
+  assert.match(decide(noReport.context).reason, /^write BUILD-REPORT.md/)
+  assert.equal(noReport.calls.length, 0)
+})
+
+test('blocks when a done task does not hold, before running gates', () => {
+  const { context, calls } = ctx({ checkDone: () => 'task 1 is marked done but its verify: fails' })
+  assert.equal(decide(context).reason, 'task 1 is marked done but its verify: fails; reopen it or fix it')
+  assert.equal(calls.length, 0)
 })
 
 test('blocks on uncommitted work before checking the report', () => {

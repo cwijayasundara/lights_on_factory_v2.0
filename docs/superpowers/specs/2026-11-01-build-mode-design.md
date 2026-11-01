@@ -154,3 +154,15 @@ Recorded in `docs/experiments/03-build-mode-mini-agent-kit.md`:
 - Hook implementation details, the state file format, and log fields.
 - The kit's internal module layout, and its YAML or JSON choice for scripts.
 - The exact Claude Code flags for auto mode and for loading project settings only, verified against current docs.
+
+## Change log
+
+- 2026-11-01, from building and reviewing it:
+  - The Stop hook runs from the install commit (`git archive` into a temp dir), not the working tree, and exits 2 (block) if it can't load or crashes.
+  - Protected files are compared by content against the install commit, so git index tricks can't hide an edit.
+  - The install commit is the latest `chore: install build mode` commit; `build.json` carries a `templateHash`, so every upgrade makes one.
+  - Before the gates, the hook re-runs each `[x]` task's `verify:` and checks its `done:` commit is on the branch.
+  - The cheap checks (committed, pushed, report) run before the full gates, so the gates run once at the end.
+  - A locked task may gain `after:` only on other locked tasks.
+  - Gate wrappers fail closed on unparseable or empty tool output, clear stale reports, run ruff `--isolated` and mypy with a protected config, and refuse pytest config that drops tests.
+  - Gate tools run from pinned clones rather than `uv tool`, because mutator needs crapper beside it.

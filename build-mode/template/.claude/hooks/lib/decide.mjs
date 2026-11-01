@@ -19,14 +19,16 @@ export function decide(ctx) {
 
   const skipped = new Set(skippedTasks(tasks).map(task => task.n))
   const partial = skipped.size > 0 || tasks.some(task => task.status === 'blocked')
+  const header = partial ? 'PARTIAL' : ctx.acceptedMutants > 0 ? `COMPLETE (${ctx.acceptedMutants} accepted mutants)` : 'COMPLETE'
+  // Cheap checks first: the full gates run once, on the final stop attempt.
+  if (ctx.uncommitted) return block(`commit and push your work:\n${ctx.uncommitted}`)
+  const { exists, fresh } = ctx.report
+  if (!exists || !fresh || ctx.report.header !== header) return block(`write BUILD-REPORT.md with first line "${header}"`)
+  const notDone = ctx.checkDone()
+  if (notDone) return block(`${notDone}; reopen it or fix it`)
   const demoMissing = last.status === 'blocked' || skipped.has(last.n)
   const failed = ctx.runGates({ skipDemo: partial && demoMissing }).find(gate => !gate.ok)
   if (failed) return block(`gate ${failed.name} failed; fix it and keep going:\n${failed.tail}`)
-  if (ctx.uncommitted) return block(`commit and push your work:\n${ctx.uncommitted}`)
-
-  const header = partial ? 'PARTIAL' : ctx.acceptedMutants > 0 ? `COMPLETE (${ctx.acceptedMutants} accepted mutants)` : 'COMPLETE'
-  const { exists, fresh } = ctx.report
-  if (!exists || !fresh || ctx.report.header !== header) return block(`write BUILD-REPORT.md with first line "${header}"`)
   return { kind: 'allow', header }
 }
 

@@ -91,8 +91,16 @@ test('lock rejects a dropped after entry and allows an added one', () => {
   assert.deepEqual(checkLock(baseline, dropped), { ok: false, problems: ['task 3 after: lost 2'] })
   const added = tasks(example.replace('  verify: uv run pytest tests/test_fake_model.py -q\n  after: 1', '  verify: uv run pytest tests/test_fake_model.py -q\n  after: 1'))
   assert.deepEqual(checkLock(baseline, added), { ok: true })
-  const gained = tasks(example + '- [ ] 4. Extra\n  verify: true\n').map(t => (t.n === 2 ? { ...t, after: [1, 4] } : t))
+  const gained = tasks(example).map(t => (t.n === 3 ? { ...t, after: [1, 2] } : t.n === 2 ? { ...t, after: [1] } : t))
   assert.deepEqual(checkLock(baseline, gained), { ok: true })
+  const withLocked = [...baseline, { ...baseline[0], n: 4, after: [] }].map(t => (t.n === 4 ? t : t))
+  assert.deepEqual(checkLock(withLocked, withLocked.map(t => (t.n === 4 ? { ...t, after: [1] } : t))), { ok: true })
+})
+
+test('lock rejects a new after: edge from a locked task to an appended task', () => {
+  const baseline = tasks(example)
+  const current = tasks(example + '- [!] 4. Dummy\n  verify: true\n  blocked: BLOCKED.md#task-4\n').map(t => (t.n === 3 ? { ...t, after: [1, 2, 4] } : t))
+  assert.deepEqual(checkLock(baseline, current), { ok: false, problems: ['task 3 after: may not gain 4, which is not in the locked plan'] })
 })
 
 test('lock allows status changes and appended tasks', () => {

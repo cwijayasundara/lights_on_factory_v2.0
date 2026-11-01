@@ -52,7 +52,13 @@ function commitPlan(dir: string, text: string, message = 'docs: plan'): void {
   git(dir, 'commit', '-q', '-m', message)
 }
 
-const finished = `# Plan\n\n- [x] 1. Build it\n  verify: true\n  done: abc\n- [x] 2. Demo\n  verify: ${DEMO}\n  after: 1\n  done: def\n`
+const planFor = (sha: string, verify = 'true') =>
+  `# Plan\n\n- [x] 1. Build it\n  verify: ${verify}\n  done: ${sha}\n- [x] 2. Demo\n  verify: ${DEMO}\n  after: 1\n  done: ${sha}\n`
+const head = (dir: string) => git(dir, 'rev-parse', '--short', 'HEAD')
+let finished = planFor('0000000')
+function finish(dir: string, verify = 'true'): void {
+  finished = planFor(head(dir), verify)
+}
 
 function stop(dir: string, input: unknown = { cwd: dir }) {
   const result = spawnSync(process.execPath, [hook, 'stop'], { input: JSON.stringify(input), encoding: 'utf8' })
@@ -88,6 +94,7 @@ test('an edited SPEC.md blocks, committed or not', () => {
 
 test('a plan edited against its committed baseline blocks', () => {
   const dir = repo()
+  finish(dir)
   commitPlan(dir, finished)
   commitPlan(dir, finished.replace('verify: true', 'verify: echo skip'), 'weaken')
   assert.match(stop(dir).json?.reason ?? '', /^restore the plan: task 1 verify: changed/)
@@ -95,7 +102,7 @@ test('a plan edited against its committed baseline blocks', () => {
 
 test('a gate that sleeps past timeoutSeconds fails as timed out', () => {
   const dir = repo([{ name: 'slow', run: 'sleep 5', timeoutSeconds: 1 }])
-  commitPlan(dir, finished)
+  finishedWithReport(dir)
   const reason = stop(dir).json?.reason ?? ''
   assert.match(reason, /^gate slow failed/)
   assert.match(reason, /timed out after 1s/)
@@ -103,7 +110,7 @@ test('a gate that sleeps past timeoutSeconds fails as timed out', () => {
 
 test('a failing gate blocks with its output tail', () => {
   const dir = repo([{ name: 'tests', run: 'echo boom-line; exit 1', timeoutSeconds: 5 }])
-  commitPlan(dir, finished)
+  finishedWithReport(dir)
   const reason = stop(dir).json?.reason ?? ''
   assert.match(reason, /^gate tests failed/)
   assert.match(reason, /boom-line/)
@@ -111,6 +118,7 @@ test('a failing gate blocks with its output tail', () => {
 
 test('a finished, committed build with a matching report may stop', () => {
   const dir = repo()
+  finish(dir)
   commitPlan(dir, finished)
   assert.match(stop(dir).json?.reason ?? '', /^write BUILD-REPORT.md with first line "COMPLETE"/)
   fs.writeFileSync(path.join(dir, 'BUILD-REPORT.md'), 'COMPLETE\n\nAll good.\n')
@@ -146,7 +154,8 @@ test('eight unchanged blocks then allows STALLED and prepends it to BUILD-REPORT
 test('progress resets the no-progress count', () => {
   const dir = repo()
   for (let i = 0; i < 7; i += 1) stop(dir)
-  commitPlan(dir, finished.replace('- [x] 2. Demo', '- [ ] 2. Demo').replace('  done: def\n', ''))
+  finish(dir)
+  commitPlan(dir, finished.replace('- [x] 2. Demo', '- [ ] 2. Demo').replace(/  done: \w+\n$/, ''))
   for (let i = 0; i < 7; i += 1) assert.equal(stop(dir).json?.decision, 'block')
 })
 
@@ -173,4 +182,55 @@ test('the wall clock budget stalls the run', () => {
   const result = stop(dir)
   assert.equal(result.out, '')
   assert.match(fs.readFileSync(path.join(dir, 'BUILD-REPORT.md'), 'utf8'), /^STALLED\n\nStopped by the build-mode loop guard: wall clock budget of 6 hours used\./)
+})
+
+test('a protected edit hidden with assume-unchanged still blocks', () => {
+  const dir = repo()
+  git(dir, 'update-index', '--assume-unchanged', '.factory/build.json')
+  const config = JSON.parse(fs.readFileSync(path.join(dir, '.factory/build.json'), 'utf8'))
+  fs.writeFileSync(path.join(dir, '.factory/build.json'), JSON.stringify({ ...config, gates: [] }, null, 2))
+  assert.equal(git(dir, 'status', '--porcelain'), '')
+  assert.match(stop(dir).json?.reason ?? '', /^restore the protected files[\s\S]*\.factory\/build\.json/)
+})
+
+test('a new file under a protected directory blocks', () => {
+  const dir = repo()
+  fs.mkdirSync(path.join(dir, '.claude/hooks'), { recursive: true })
+  fs.writeFileSync(path.join(dir, '.claude/hooks/extra.mjs'), '')
+  assert.match(stop(dir).json?.reason ?? '', /^restore the protected files[\s\S]*\.claude\/hooks\/extra\.mjs/)
+})
+
+function finishedWithReport(dir: string, verify = 'true'): void {
+  finish(dir, verify)
+  commitPlan(dir, finished)
+  fs.writeFileSync(path.join(dir, 'BUILD-REPORT.md'), 'COMPLETE\n')
+  git(dir, 'add', '-A')
+  git(dir, 'commit', '-q', '-m', 'docs: report')
+}
+
+test('a done task whose verify fails blocks', () => {
+  const dir = repo()
+  finishedWithReport(dir, 'exit 1')
+  assert.equal(stop(dir).json?.reason, 'task 1 is marked done but its verify: fails; reopen it or fix it')
+})
+
+test('a done: that is not a commit on this branch blocks', () => {
+  const dir = repo()
+  finish(dir)
+  commitPlan(dir, finished.replaceAll(head(dir), 'abc1234'))
+  fs.writeFileSync(path.join(dir, 'BUILD-REPORT.md'), 'COMPLETE\n')
+  git(dir, 'add', '-A')
+  git(dir, 'commit', '-q', '-m', 'docs: report')
+  assert.equal(stop(dir).json?.reason, 'task 1 is marked done but done: abc1234 is not a commit on this branch; reopen it or fix it')
+})
+
+test('a remote without an upstream branch blocks until pushed', () => {
+  const dir = repo()
+  const origin = fs.mkdtempSync(path.join(os.tmpdir(), 'origin-'))
+  git(origin, 'init', '-q', '--bare')
+  git(dir, 'remote', 'add', 'origin', origin)
+  finishedWithReport(dir)
+  assert.match(stop(dir).json?.reason ?? '', /no upstream branch; push with: git push -u origin main/)
+  git(dir, 'push', '-q', '-u', 'origin', 'main')
+  assert.equal(stop(dir).out, '')
 })

@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -16,6 +17,19 @@ type Gate = { name: string; run: string; timeoutSeconds: number }
 const INSTALL_SUBJECT = 'chore: install build mode'
 const IGNORED = ['.factory/build-state.json', '.factory/hook-log.jsonl', '.metrics/', 'target/']
 const STOP_SLACK_SECONDS = 300
+const OUR_HOOKS = ['.claude/hooks/build-gate.mjs', '.claude/hooks/protect-paths.mjs']
+
+// The Stop hook judges the build, so it runs the copy pinned at the install commit, never the
+// working tree. If that copy cannot load or crashes, exit 2 blocks the stop instead of allowing it.
+const PINNED_STOP = [
+  'r="$CLAUDE_PROJECT_DIR"',
+  'd=$(mktemp -d) || exit 2',
+  `i=$(git -C "$r" log -1 --format=%H "--grep=^${INSTALL_SUBJECT}\$" -- .factory/build.json)`,
+  'if [ -z "$i" ] || ! git -C "$r" archive "$i" .claude/hooks | tar -x -C "$d"; then echo "build mode: cannot load the Stop hook from the install commit" >&2; rm -rf "$d"; exit 2; fi',
+  'node "$d/.claude/hooks/build-gate.mjs" stop; s=$?',
+  'rm -rf "$d"',
+  'if [ "$s" -ne 0 ]; then echo "build mode: the Stop hook crashed (exit $s)" >&2; exit 2; fi',
+].join('; ')
 
 function fail(message: string): never {
   throw new Error(message)
@@ -72,9 +86,32 @@ function writeIfChanged(file: string, content: string): void {
   fs.writeFileSync(file, content)
 }
 
+function filesUnder(dir: string, base = dir): string[] {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
+    if (entry.name === '__pycache__') return []
+    const full = path.join(dir, entry.name)
+    return entry.isDirectory() ? filesUnder(full, base) : [path.relative(base, full)]
+  })
+}
+
+// Changes whenever anything the installer copies changes, so a hook-only upgrade still
+// produces a new install commit touching build.json.
+function templateHash(buildMode: string, profile: string): string {
+  const hash = createHash('sha256')
+  const roots = ['template', `profiles/${profile}`, 'settings.json']
+  for (const root of roots) {
+    const full = path.join(buildMode, root)
+    const files = fs.statSync(full).isDirectory() ? filesUnder(full).sort().map(f => path.join(root, f)) : [root]
+    for (const file of files) hash.update(`${file}\0`).update(fs.readFileSync(path.join(buildMode, file))).update('\0')
+  }
+  return hash.digest('hex')
+}
+
 function writeConfig(factoryRoot: string, target: string, profile: string, demo: string): Gate[] {
-  const config = JSON.parse(fs.readFileSync(path.join(factoryRoot, 'build-mode/profiles', profile, 'build.json'), 'utf8'))
+  const buildMode = path.join(factoryRoot, 'build-mode')
+  const config = JSON.parse(fs.readFileSync(path.join(buildMode, 'profiles', profile, 'build.json'), 'utf8'))
   config.demo.run = demo
+  config.templateHash = templateHash(buildMode, profile)
   writeIfChanged(path.join(target, '.factory/build.json'), `${JSON.stringify(config, null, 2)}\n`)
   return [...config.gates, config.demo]
 }
@@ -89,15 +126,16 @@ function mergeSettings(factoryRoot: string, target: string, stopTimeout: number)
   permissions.deny = union(permissions.deny, template.permissions?.deny)
   settings.hooks ??= {}
   for (const [event, groups] of Object.entries(template.hooks ?? {})) {
-    const existing = (settings.hooks[event] ??= [])
-    for (const group of groups) {
-      const command = group.hooks[0].command
-      const timeout = event === 'Stop' ? stopTimeout : group.hooks[0].timeout
-      const present = existing.find(g => g.hooks.some(h => h.command === command))
-      const entry: HookGroup = { ...group, hooks: [{ ...group.hooks[0], timeout }] }
-      if (present) Object.assign(present, entry)
-      else existing.unshift(entry)
-    }
+    // Drop earlier build-mode entries (keeping the user's own hooks), then add the current ones.
+    const kept = (settings.hooks[event] ?? [])
+      .map(group => ({ ...group, hooks: group.hooks.filter(h => !OUR_HOOKS.some(ours => h.command.includes(ours))) }))
+      .filter(group => group.hooks.length > 0)
+    const ours = groups.map(group => {
+      const hook = group.hooks[0]
+      const entry = event === 'Stop' ? { ...hook, command: PINNED_STOP, timeout: stopTimeout } : hook
+      return { ...group, hooks: [entry] }
+    })
+    settings.hooks[event] = [...ours, ...kept]
   }
   writeIfChanged(file, `${JSON.stringify(settings, null, 2)}\n`)
 }

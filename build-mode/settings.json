@@ -1,5 +1,5 @@
 {
-  "$comment": "Merged into each build-mode target's .claude/settings.json by scripts/install-build-mode.ts. The Stop timeout is set by the installer from the gate budgets.",
+  "$comment": "Merged into each build-mode target's .claude/settings.json by scripts/install-build-mode.ts. The installer replaces the Stop command with one that runs the hook pinned at the install commit, and sets its timeout from the gate budgets.",
   "permissions": {
     "allow": [
       "Bash(uv *)",
@@ -24,8 +24,9 @@
       "Bash(git push -f*)",
       "Bash(git push * --force*)",
       "Bash(git push * -f*)",
+      "Bash(git push *+*)",
+      "Bash(git reset *)",
       "Bash(git rebase *)",
-      "Bash(git reset --hard*)",
       "Bash(git commit --amend*)"
     ]
   },

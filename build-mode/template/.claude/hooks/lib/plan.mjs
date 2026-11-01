@@ -87,6 +87,7 @@ function findCycle(tasks, byNumber) {
 
 export function checkLock(baseline, current) {
   const now = new Map(current.map(task => [task.n, task]))
+  const locked = new Set(baseline.map(task => task.n))
   const problems = []
   for (const before of baseline) {
     const after = now.get(before.n)
@@ -98,6 +99,9 @@ export function checkLock(baseline, current) {
     if (after.verify !== before.verify) problems.push(`task ${before.n} verify: changed`)
     const lost = before.after.filter(dep => !after.after.includes(dep))
     if (lost.length) problems.push(`task ${before.n} after: lost ${lost.join(', ')}`)
+    // New dependencies may only point at locked tasks; otherwise a dummy blocked task could skip real work.
+    const outside = after.after.filter(dep => !before.after.includes(dep) && !locked.has(dep))
+    if (outside.length) problems.push(`task ${before.n} after: may not gain ${outside.join(', ')}, which is not in the locked plan`)
   }
   return problems.length ? { ok: false, problems } : { ok: true }
 }

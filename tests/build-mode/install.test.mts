@@ -64,13 +64,16 @@ test('installs into a fresh repo and the hooks resolve', async () => {
   const commands = Object.values(settings.hooks as Record<string, { hooks: { command: string; timeout: number }[] }[]>).flatMap(groups =>
     groups.flatMap(group => group.hooks.map(hook => hook.command)),
   )
-  assert.ok(commands.includes('node "$CLAUDE_PROJECT_DIR/.claude/hooks/build-gate.mjs" stop'))
+  assert.ok(commands.some(command => command.includes('archive') && command.includes('build-gate.mjs" stop')))
   assert.ok(commands.includes('node "$CLAUDE_PROJECT_DIR/.claude/hooks/build-gate.mjs" session-start'))
   assert.ok(commands.includes('node "$CLAUDE_PROJECT_DIR/.claude/hooks/protect-paths.mjs"'))
   const gates = readJson(path.join(dir, '.factory/build.json')).gates as { timeoutSeconds: number }[]
   const budget = gates.reduce((sum, gate) => sum + gate.timeoutSeconds, 0) + 120 + 300
   assert.equal(settings.hooks.Stop[0].hooks[0].timeout, budget)
   assert.ok(settings.permissions.deny.includes('Bash(git push --force*)'))
+  assert.ok(settings.permissions.deny.includes('Bash(git push *+*)'))
+  assert.ok(settings.permissions.deny.includes('Bash(git reset *)'))
+  assert.match(readJson(path.join(dir, '.factory/build.json')).templateHash, /^[0-9a-f]{64}$/)
   assert.ok(settings.permissions.allow.includes('Bash(uv *)'))
   const ignore = fs.readFileSync(path.join(dir, '.gitignore'), 'utf8')
   for (const line of ['.factory/build-state.json', '.factory/hook-log.jsonl', '.metrics/', 'target/']) assert.ok(ignore.split('\n').includes(line))
@@ -160,4 +163,49 @@ test('start-build.sh passes the prompt from build-prompt.txt, isolated by settin
   fs.writeFileSync(path.join(dir, '.factory/isolation'), 'config-dir\n')
   assert.equal(run().status, 0)
   assert.match(fs.readFileSync(record, 'utf8'), new RegExp(`CONFIG=${os.homedir()}/\\.claude-build`))
+})
+
+function stopCommand(dir: string): string {
+  const settings = readJson(path.join(dir, '.claude/settings.json'))
+  return settings.hooks.Stop[0].hooks[0].command as string
+}
+
+function runStop(dir: string, projectDir = dir) {
+  return spawnSync('/bin/sh', ['-c', stopCommand(dir)], {
+    input: JSON.stringify({ cwd: projectDir }),
+    env: { ...process.env, CLAUDE_PROJECT_DIR: projectDir },
+    encoding: 'utf8',
+  })
+}
+
+test('the Stop command runs the hook pinned at the install commit, not the working tree', async () => {
+  const dir = target()
+  await install(dir)
+  fs.writeFileSync(path.join(dir, '.claude/hooks/lib/decide.mjs'), "export function decide() { return { kind: 'allow', header: 'COMPLETE' } }\n")
+  const result = runStop(dir)
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(JSON.parse(result.stdout).reason, /^restore the protected files[\s\S]*changed: \.claude\/hooks\/lib\/decide\.mjs/)
+  fs.rmSync(path.join(dir, '.claude/hooks/lib'), { recursive: true })
+  assert.match(JSON.parse(runStop(dir).stdout).reason, /deleted: \.claude\/hooks\/lib\/decide\.mjs/)
+})
+
+test('the Stop command blocks with exit 2 when it cannot load the pinned hook', async () => {
+  const dir = target()
+  await install(dir)
+  const other = target()
+  const result = runStop(dir, other)
+  assert.equal(result.status, 2)
+  assert.match(result.stderr, /build mode: cannot load the Stop hook from the install commit/)
+})
+
+test('a reinstall that changes only a hook file becomes the new install commit', async () => {
+  const copy = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'factory-copy-')))
+  fs.cpSync(path.join(factoryRoot, 'build-mode'), path.join(copy, 'build-mode'), { recursive: true })
+  const dir = target()
+  const first = (await installer()).installBuildMode({ target: dir, factoryRoot: copy, demo: DEMO })
+  fs.appendFileSync(path.join(copy, 'build-mode/template/.claude/hooks/protect-paths.mjs'), '// upgraded\n')
+  const second = (await installer()).installBuildMode({ target: dir, factoryRoot: copy, demo: DEMO })
+  assert.notEqual(second.installCommit, first.installCommit)
+  assert.equal(git(dir, 'rev-parse', 'HEAD'), second.installCommit)
+  assert.equal(JSON.parse(runStop(dir).stdout).reason, 'write PLAN.md from SPEC.md')
 })

@@ -6,8 +6,8 @@
   "protected": [".claude/", ".factory/build.json", ".factory/gates/", "SPEC.md"],
   "gates": [
     { "name": "tests", "run": "python3 .factory/gates/tests.py", "timeoutSeconds": 900 },
-    { "name": "lint", "run": "uv run ruff check src tests && uv run ruff format --check src tests", "timeoutSeconds": 300 },
-    { "name": "types", "run": "uv run mypy --strict src", "timeoutSeconds": 600 },
+    { "name": "lint", "run": "uv run ruff check --isolated src tests && uv run ruff format --isolated --check src tests", "timeoutSeconds": 300 },
+    { "name": "types", "run": "uv run mypy --strict --config-file .factory/gates/mypy.ini src", "timeoutSeconds": 600 },
     { "name": "crap", "run": "python3 .factory/gates/crap.py", "timeoutSeconds": 900 },
     { "name": "dry", "run": "python3 .factory/gates/dry.py", "timeoutSeconds": 300 },
     { "name": "mutate", "run": "python3 .factory/gates/mutate.py", "timeoutSeconds": 3000 }
