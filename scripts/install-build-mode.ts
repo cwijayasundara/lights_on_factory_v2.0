@@ -15,7 +15,7 @@ type Settings = {
 type Gate = { name: string; run: string; timeoutSeconds: number }
 
 const INSTALL_SUBJECT = 'chore: install build mode'
-const IGNORED = ['.factory/build-state.json', '.factory/hook-log.jsonl', '.metrics/', 'target/']
+const IGNORED = ['.factory/build-state.json', '.factory/hook-log.jsonl', '.factory/runs/', '.metrics/', 'target/']
 const STOP_SLACK_SECONDS = 300
 const OUR_HOOKS = ['.claude/hooks/build-gate.mjs', '.claude/hooks/protect-paths.mjs']
 

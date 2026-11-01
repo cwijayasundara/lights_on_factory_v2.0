@@ -40,7 +40,7 @@ function repo(gates: Gate[] = [{ name: 'tests', run: 'true', timeoutSeconds: 5 }
   fs.writeFileSync(path.join(dir, 'SPEC.md'), '# Spec\n')
   fs.mkdirSync(path.join(dir, '.factory'))
   fs.writeFileSync(path.join(dir, '.factory/build.json'), JSON.stringify(buildJson(gates, extra), null, 2))
-  fs.writeFileSync(path.join(dir, '.gitignore'), '.factory/build-state.json\n.factory/hook-log.jsonl\n')
+  fs.writeFileSync(path.join(dir, '.gitignore'), '.factory/build-state.json\n.factory/hook-log.jsonl\n.factory/runs/\n')
   git(dir, 'add', '-A')
   git(dir, 'commit', '-q', '-m', 'chore: install build mode')
   return dir
@@ -406,4 +406,71 @@ test('maintain runs the acceptance suite too', () => {
   git(dir, 'add', '-A')
   git(dir, 'commit', '-q', '-m', FLIP)
   assert.match(stop(dir).json?.reason ?? '', /^gate acceptance failed/)
+})
+
+// ---- run records ----
+
+const runFiles = (dir: string) => {
+  const folder = path.join(dir, '.factory/runs')
+  return fs.existsSync(folder) ? fs.readdirSync(folder).sort() : []
+}
+const readRun = (dir: string, file: string) => JSON.parse(fs.readFileSync(path.join(dir, '.factory/runs', file), 'utf8'))
+
+test('a Stop writes one record per session and updates it on later stops', () => {
+  const dir = repo([{ name: 'tests', run: 'true', timeoutSeconds: 5 }])
+  finishedWithReport(dir)
+  const transcript = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'transcript-')), 'session.jsonl')
+  fs.writeFileSync(transcript, `${JSON.stringify({ type: 'assistant', message: { id: 'm1', model: 'claude-test', usage: { input_tokens: 5, output_tokens: 6 } } })}\n`)
+  const input = { cwd: dir, session_id: 'sess-abcdef12', transcript_path: transcript }
+  stop(dir, input)
+  const files = runFiles(dir)
+  assert.equal(files.length, 1)
+  assert.match(files[0], /-sess-abc\.json$/)
+  const record = readRun(dir, files[0])
+  assert.equal(record.sessionId, 'sess-abcdef12')
+  assert.equal(record.outcome, 'COMPLETE')
+  assert.equal(record.model, 'claude-test')
+  assert.deepEqual(record.tokens, { input: 5, output: 6, cacheRead: 0, cacheCreation: 0 })
+  assert.equal(record.tasksDone, 2)
+  assert.equal(record.gates.tests.runs, 1)
+  assert.equal(record.gates.tests.failures, 0)
+  assert.equal(typeof record.gates.tests.seconds, 'number')
+  stop(dir, input)
+  assert.equal(runFiles(dir).length, 1)
+  assert.equal(readRun(dir, runFiles(dir)[0]).stops, 2)
+})
+
+test('a blocked gate is counted as a failure by name', () => {
+  const dir = repo([{ name: 'tests', run: 'exit 1', timeoutSeconds: 5 }])
+  finishedWithReport(dir)
+  stop(dir, { cwd: dir, session_id: 'sess-fail0001' })
+  const record = readRun(dir, runFiles(dir)[0])
+  assert.equal(record.blocks, 1)
+  assert.equal(record.outcome, null)
+  assert.equal(record.gates.tests.failures, 1)
+  assert.equal(record.tokens, null)
+})
+
+test('session-start creates the record so wall time covers the whole session', () => {
+  const dir = repo()
+  spawnSync(process.execPath, [hook, 'session-start'], { input: JSON.stringify({ cwd: dir, session_id: 'sess-start001' }), encoding: 'utf8' })
+  assert.equal(runFiles(dir).length, 1)
+  assert.equal(readRun(dir, runFiles(dir)[0]).stops, 0)
+})
+
+test('maintain stops are recorded with the phase and fast gate timings', () => {
+  const dir = completedBuild()
+  stop(dir, { cwd: dir, session_id: 'sess-build001' })
+  stop(dir, { cwd: dir, session_id: 'sess-maint001' })
+  const maintain = runFiles(dir).map(file => readRun(dir, file)).find(record => record.sessionId === 'sess-maint001')
+  assert.equal(maintain.phase, 'maintain')
+  assert.equal(maintain.gates.tests.runs, 1)
+})
+
+test('a record that cannot be written never changes the hook decision', () => {
+  const dir = repo()
+  fs.writeFileSync(path.join(dir, '.factory/runs'), 'a file, not a directory')
+  const result = stop(dir, { cwd: dir, session_id: 'sess-broken001' })
+  assert.equal(result.status, 0)
+  assert.equal(result.json?.reason, 'write PLAN.md from SPEC.md')
 })

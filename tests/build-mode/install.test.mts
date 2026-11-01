@@ -249,3 +249,9 @@ test('an acceptance gate is configured only when the target has an acceptance/ d
   const budget = [...config.gates, config.acceptance, config.demo].reduce((sum: number, gate: { timeoutSeconds: number }) => sum + gate.timeoutSeconds, 0)
   assert.equal(stopTimeout, budget + 300)
 })
+
+test('run records are git-ignored so measuring never dirties the tree', async () => {
+  const dir = target()
+  await install(dir)
+  assert.match(fs.readFileSync(path.join(dir, '.gitignore'), 'utf8'), /^\.factory\/runs\/$/m)
+})

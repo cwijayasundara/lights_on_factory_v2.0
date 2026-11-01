@@ -6,6 +6,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { decide, decideMaintain } from './lib/decide.mjs'
 import { checkLock, parsePlan } from './lib/plan.mjs'
+import { fromTranscript, recordEvent } from './lib/runs.mjs'
 import { removedAssertions } from './lib/weakening.mjs'
 
 const INSTALL_SUBJECT = 'chore: install build mode'
@@ -133,7 +134,16 @@ function lockFor(root, planFile, plan) {
   return { ok: true }
 }
 
+// What this invocation ran, for the run record. One hook invocation is one process, so module state is safe.
+const observed = { gates: [], plan: null, session: {} }
+
 function runGate(root, gate) {
+  const began = Date.now()
+  const result = runGateUntimed(root, gate)
+  return { ...result, seconds: (Date.now() - began) / 1000 }
+}
+
+function runGateUntimed(root, gate) {
   const result = spawnSync(gate.run, { cwd: root, shell: true, encoding: 'utf8', timeout: gate.timeoutSeconds * 1000, maxBuffer: 64 * 1024 * 1024 })
   if (result.error?.code === 'ETIMEDOUT' || (result.status === null && result.signal)) {
     return { name: gate.name, ok: false, tail: `${tail(result.stdout ?? '', 20)}\ntimed out after ${gate.timeoutSeconds}s` }
@@ -146,6 +156,7 @@ function runGates(root, config, { skipDemo }) {
   const results = []
   for (const gate of gates) {
     const result = runGate(root, gate)
+    observed.gates.push(result)
     results.push(result)
     if (!result.ok) break
   }
@@ -236,6 +247,7 @@ function stop(root, install) {
     const config = JSON.parse(fs.readFileSync(path.join(root, '.factory/build.json'), 'utf8'))
     const planFile = path.join(root, config.plan)
     const plan = fs.existsSync(planFile) ? parsePlan(fs.readFileSync(planFile, 'utf8')) : null
+    observed.plan = plan
     const print = fingerprint(root, plan)
     const noProgressBlocks = print === state.lastFingerprint ? (state.noProgressBlocks ?? 0) : 0
     if (phase === 'maintain') {
@@ -246,6 +258,7 @@ function stop(root, install) {
           const results = []
           for (const gate of gates) {
             results.push(runGate(root, gate))
+            observed.gates.push(results.at(-1))
             if (!results.at(-1).ok) break
           }
           return results
@@ -279,7 +292,30 @@ function stop(root, install) {
   }
 }
 
+function measure(root, phase, decision) {
+  const { sessionId, transcriptPath } = observed.session
+  const tasks = observed.plan?.ok ? { done: observed.plan.tasks.filter(task => task.status === 'done').length, total: observed.plan.tasks.length } : null
+  let transcript = null
+  try {
+    transcript = fromTranscript(transcriptPath ? fs.readFileSync(transcriptPath, 'utf8') : undefined)
+  } catch {
+    transcript = null
+  }
+  recordEvent(root, {
+    kind: 'stop',
+    sessionId,
+    phase,
+    now: new Date(),
+    decision: decision.kind,
+    header: decision.header,
+    gates: observed.gates.map(({ name, ok, seconds }) => ({ name, ok, seconds })),
+    tasks,
+    transcript,
+  })
+}
+
 function finish(root, state, decision, print, noProgressBlocks, phase) {
+  measure(root, phase, decision)
   if (decision.kind === 'block') {
     saveState(root, { ...state, lastFingerprint: print, noProgressBlocks: noProgressBlocks + 1 })
     log(root, { decision: 'block', reason: decision.reason, fingerprint: print })
@@ -295,6 +331,7 @@ function finish(root, state, decision, print, noProgressBlocks, phase) {
 function sessionStart(root) {
   const state = readJson(path.join(root, STATE), {})
   const maintain = readPhase(root) === 'maintain'
+  recordEvent(root, { kind: 'session-start', sessionId: observed.session.sessionId, phase: maintain ? 'maintain' : 'build', now: new Date() })
   if (!maintain && !state.startedAt) saveState(root, { ...state, startedAt: new Date().toISOString() })
   return { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: maintain ? MAINTAIN_CONTEXT : BUILD_CONTEXT } }
 }
@@ -302,6 +339,7 @@ function sessionStart(root) {
 function main() {
   const mode = process.argv[2]
   const input = readInput()
+  observed.session = { sessionId: input.session_id, transcriptPath: input.transcript_path }
   let output = null
   try {
     const { root, install } = findRoot(input.cwd ?? process.cwd())
