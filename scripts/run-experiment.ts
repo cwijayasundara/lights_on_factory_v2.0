@@ -147,7 +147,7 @@ function build(options: Options, arm: Arm, dir: string) {
 function defaultGrader(dir: string, suite: string): Grade {
   const report = path.join(dir, 'target/grade.xml')
   fs.rmSync(report, { force: true })
-  spawnSync('uv', ['run', 'python', '-B', '-m', 'pytest', suite, '-q', '-p', 'no:cacheprovider', `--junitxml=${report}`], { cwd: dir, encoding: 'utf8' })
+  spawnSync('uv', ['run', 'python', '-B', '-m', 'pytest', suite, '-q', '-p', 'no:cacheprovider', '--continue-on-collection-errors', `--junitxml=${report}`], { cwd: dir, encoding: 'utf8' })
   if (!fs.existsSync(report)) return { tests: 0, passed: 0, skipped: 0 }
   const xml = fs.readFileSync(report, 'utf8')
   const attr = (name: string) => Number(new RegExp(`<testsuite[^>]*\\b${name}="(\\d+)"`).exec(xml)?.[1] ?? 0)
