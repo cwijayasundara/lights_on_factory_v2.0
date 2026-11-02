@@ -15,9 +15,15 @@ type Settings = {
 type Gate = { name: string; run: string; timeoutSeconds: number }
 
 const INSTALL_SUBJECT = 'chore: install build mode'
-const IGNORED = ['.factory/build-state.json', '.factory/hook-log.jsonl', '.factory/runs/', '.metrics/', 'target/']
+const IGNORED = ['.fix-mode', '.factory/build-state.json', '.factory/hook-log.jsonl', '.factory/runs/', '.metrics/', 'target/']
 const STOP_SLACK_SECONDS = 300
-const OUR_HOOKS = ['.claude/hooks/build-gate.mjs', '.claude/hooks/protect-paths.mjs']
+const OUR_HOOKS = [
+  '.claude/hooks/build-gate.mjs',
+  '.claude/hooks/protect-paths.mjs',
+  '.claude/hooks/secret-guard.mjs',
+  '.claude/hooks/fix-mode-guard.mjs',
+  '.claude/hooks/post-edit-check.mjs',
+]
 
 // The Stop hook judges the build, so it runs the copy pinned at the install commit, never the
 // working tree. If that copy cannot load or crashes, exit 2 blocks the stop instead of allowing it.

@@ -47,6 +47,9 @@ test('installs into a fresh repo and the hooks resolve', async () => {
   for (const file of [
     '.claude/hooks/build-gate.mjs',
     '.claude/hooks/protect-paths.mjs',
+    '.claude/hooks/secret-guard.mjs',
+    '.claude/hooks/fix-mode-guard.mjs',
+    '.claude/hooks/post-edit-check.mjs',
     '.claude/hooks/lib/plan.mjs',
     '.claude/hooks/lib/decide.mjs',
     '.claude/skills/build-discipline/SKILL.md',
@@ -67,6 +70,7 @@ test('installs into a fresh repo and the hooks resolve', async () => {
   assert.ok(commands.some(command => command.includes('archive') && command.includes('build-gate.mjs" stop')))
   assert.ok(commands.includes('node "$CLAUDE_PROJECT_DIR/.claude/hooks/build-gate.mjs" session-start'))
   assert.ok(commands.includes('node "$CLAUDE_PROJECT_DIR/.claude/hooks/protect-paths.mjs"'))
+  for (const guard of ['secret-guard', 'fix-mode-guard', 'post-edit-check']) assert.ok(commands.includes(`node "$CLAUDE_PROJECT_DIR/.claude/hooks/${guard}.mjs"`))
   const gates = readJson(path.join(dir, '.factory/build.json')).gates as { timeoutSeconds: number }[]
   const budget = gates.reduce((sum, gate) => sum + gate.timeoutSeconds, 0) + 120 + 300
   assert.equal(settings.hooks.Stop[0].hooks[0].timeout, budget)
@@ -76,7 +80,7 @@ test('installs into a fresh repo and the hooks resolve', async () => {
   assert.match(readJson(path.join(dir, '.factory/build.json')).templateHash, /^[0-9a-f]{64}$/)
   assert.ok(settings.permissions.allow.includes('Bash(uv *)'))
   const ignore = fs.readFileSync(path.join(dir, '.gitignore'), 'utf8')
-  for (const line of ['.factory/build-state.json', '.factory/hook-log.jsonl', '.metrics/', 'target/']) assert.ok(ignore.split('\n').includes(line))
+  for (const line of ['.fix-mode', '.factory/build-state.json', '.factory/hook-log.jsonl', '.metrics/', 'target/']) assert.ok(ignore.split('\n').includes(line))
 
   const hook = spawnSync(process.execPath, [path.join(dir, '.claude/hooks/build-gate.mjs'), 'stop'], {
     input: JSON.stringify({ cwd: dir }),
@@ -110,7 +114,8 @@ test('a second install changes nothing and adds no duplicate hooks', async () =>
   assert.equal(git(dir, 'rev-parse', 'HEAD'), first.installCommit)
   const settings = readJson(path.join(dir, '.claude/settings.json'))
   assert.equal(settings.hooks.Stop.length, 1)
-  assert.equal(settings.hooks.PreToolUse.length, 1)
+  assert.equal(settings.hooks.PreToolUse.length, 3)
+  assert.equal(settings.hooks.PostToolUse.length, 1)
   assert.equal(new Set(settings.permissions.allow).size, settings.permissions.allow.length)
 })
 
