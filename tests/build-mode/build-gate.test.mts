@@ -474,3 +474,37 @@ test('a record that cannot be written never changes the hook decision', () => {
   assert.equal(result.status, 0)
   assert.equal(result.json?.reason, 'write PLAN.md from SPEC.md')
 })
+
+test('the flip to maintain is pushed when the branch has an upstream', () => {
+  const dir = completedBuild()
+  const remote = fs.mkdtempSync(path.join(os.tmpdir(), 'build-gate-remote-'))
+  git(remote, 'init', '-q', '--bare')
+  git(dir, 'remote', 'add', 'origin', remote)
+  git(dir, 'push', '-q', '-u', 'origin', 'main')
+  assert.equal(stop(dir).out, '')
+  assert.equal(git(dir, 'log', '-1', '--format=%s'), FLIP)
+  assert.equal(git(dir, 'rev-list', '--count', '@{u}..HEAD'), '0')
+})
+
+test('stop blocks on source commits without tests and clears once a tests commit follows', () => {
+  const dir = repo([{ name: 'tests', run: 'true', timeoutSeconds: 5 }], { testPaths: ['tests/'] })
+  fs.mkdirSync(path.join(dir, 'src'))
+  fs.writeFileSync(path.join(dir, 'src/a.py'), 'x = 1\n')
+  git(dir, 'add', '-A')
+  git(dir, 'commit', '-q', '-m', 'feat: a')
+  assert.match(stop(dir).json?.reason ?? '', /^add a commit with tests for this code[\s\S]*feat: a/)
+  fs.mkdirSync(path.join(dir, 'tests'))
+  fs.writeFileSync(path.join(dir, 'tests/test_a.py'), 'assert True\n')
+  git(dir, 'add', '-A')
+  git(dir, 'commit', '-q', '-m', 'test: a')
+  assert.equal(stop(dir).json?.reason, 'write PLAN.md from SPEC.md')
+})
+
+test('testFirst false switches the rule off', () => {
+  const dir = repo([{ name: 'tests', run: 'true', timeoutSeconds: 5 }], { testPaths: ['tests/'], testFirst: false })
+  fs.mkdirSync(path.join(dir, 'src'))
+  fs.writeFileSync(path.join(dir, 'src/a.py'), 'x = 1\n')
+  git(dir, 'add', '-A')
+  git(dir, 'commit', '-q', '-m', 'feat: a')
+  assert.equal(stop(dir).json?.reason, 'write PLAN.md from SPEC.md')
+})

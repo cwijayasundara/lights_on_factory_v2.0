@@ -150,3 +150,7 @@ test('stalls on no progress, on wall clock, and on a third blocked task', () => 
   assert.match(stalled({ guard: { noProgressBlocks: 0, elapsedHours: 6 } }), /wall clock/)
   assert.match(stalled({ planText: planText(blocked(1), blocked(2), blocked(3), open(4, DEMO)) }), /3 tasks blocked/)
 })
+
+test('commits without tests block, naming them', () => {
+  assert.match(reason({ untested: 'abc1234 feat: x' }), /^add a commit with tests for this code[\s\S]*abc1234 feat: x/)
+})

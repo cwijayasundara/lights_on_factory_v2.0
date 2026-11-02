@@ -7,6 +7,7 @@ import path from 'node:path'
 import { decide, decideMaintain } from './lib/decide.mjs'
 import { checkLock, parsePlan } from './lib/plan.mjs'
 import { fromTranscript, recordEvent } from './lib/runs.mjs'
+import { untestedCommits } from './lib/testfirst.mjs'
 import { removedAssertions } from './lib/weakening.mjs'
 
 const INSTALL_SUBJECT = 'chore: install build mode'
@@ -109,6 +110,18 @@ function weakenedTests(root, install, testPaths = []) {
     for (const line of lost) problems.push(`${file}: ${line}`)
   }
   return problems.join('\n')
+}
+
+// Commits since the install that change sources without changing tests (see lib/testfirst.mjs).
+function untested(root, install, config) {
+  if (config.testFirst === false) return ''
+  const shas = (git(root, ['rev-list', '--reverse', '--no-merges', `${install}..HEAD`]) ?? '').split('\n').filter(Boolean)
+  const commits = shas.map(sha => ({
+    sha,
+    subject: git(root, ['show', '-s', '--format=%s', sha]) ?? '',
+    files: (git(root, ['show', '--name-only', '--format=', sha]) ?? '').split('\n').filter(Boolean),
+  }))
+  return untestedCommits(commits, config.sources, config.testPaths).join('\n')
 }
 
 function checkDone(root, tasks) {
@@ -215,6 +228,11 @@ function flipToMaintain(root) {
     git(root, ['reset', '-q', '--', PHASE])
     fs.rmSync(path.join(root, PHASE), { force: true })
     log(root, { decision: 'note', reason: 'could not commit the flip to maintain' })
+    return
+  }
+  // The flip is the build's last commit; leave it pushed like the rest when there is somewhere to push.
+  if (git(root, ['rev-parse', '--abbrev-ref', '@{u}']) !== null && git(root, ['push', '-q']) === null) {
+    log(root, { decision: 'note', reason: 'could not push the flip to maintain' })
   }
 }
 
@@ -269,6 +287,7 @@ function stop(root, install) {
     const decision = decide({
       protectedDiff: protectedDiff(root, install, config.protected),
       weakened: weakenedTests(root, install, config.testPaths),
+      untested: untested(root, install, config),
       plan,
       lock: lockFor(root, config.plan, plan),
       demoRun: config.demo.run,

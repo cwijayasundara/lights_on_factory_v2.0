@@ -10,6 +10,7 @@ export function decide(ctx) {
   if (stalled) return stalled
   if (ctx.protectedDiff) return block(`restore the protected files; they must match the install commit:\n${ctx.protectedDiff}`)
   if (ctx.weakened) return block(`restore the assertions removed or loosened in existing tests; add new tests instead:\n${ctx.weakened}`)
+  if (ctx.untested) return block(`add a commit with tests for this code (refactor/chore/docs/style commits are exempt):\n${ctx.untested}`)
   if (!ctx.plan) return block('write PLAN.md from SPEC.md')
   if (!ctx.plan.ok) return block(`fix PLAN.md: ${ctx.plan.errors.map(e => `line ${e.line}: ${e.message}`).join('; ')}`)
   if (!ctx.lock.ok) return block(`restore the plan: ${ctx.lock.problems.join('; ')}`)
