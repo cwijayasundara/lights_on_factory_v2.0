@@ -40,7 +40,7 @@ test('the shape skill grills one question at a time and names every artifact it 
 
 test('the acceptance writer prompt keeps the writer blind to the implementation', () => {
   const prompt = read('acceptance/writer-prompt.txt')
-  for (const word of ['SPEC.md', 'acceptance/', 'src/', 'tests/', 'never skip', 'pytest', 'Acceptance examples']) {
+  for (const word of ['SPEC.md', 'acceptance/', 'src/', 'tests/', 'never skip', 'pytest', 'Acceptance examples', 'imports it from exactly that location']) {
     assert.ok(prompt.toLowerCase().includes(word.toLowerCase()), `writer prompt is missing "${word}"`)
   }
 })

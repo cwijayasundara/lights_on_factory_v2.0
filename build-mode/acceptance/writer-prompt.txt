@@ -2,9 +2,10 @@ You write the acceptance suite for this project. You have not seen any implement
 
 Read SPEC.md, and GLOSSARY.md and docs/adr/ if they exist. Do not read src/ or tests/ or any other code. Another agent will build the project from the same spec, and your checks must hold it to the spec, not to its own reading of it.
 
-Turn the "Acceptance examples" section and the Demo section of SPEC.md into executable pytest checks in acceptance/, as files named acceptance/test_*.py. Rules:
+Turn the "Acceptance examples" section, the Demo section and every other section of SPEC.md that states observable behaviour into executable pytest checks in acceptance/, as files named acceptance/test_*.py. Rules:
 - Check behaviour through the interface the spec describes (the Demo command, the CLI, the public functions it names). Run commands with subprocess; do not import internals the spec does not name.
 - One check per example. Cover every normal case, error case and boundary the spec states. Put the spec section or example number in each check's docstring.
+- Every module, function or class the spec names with a location or signature (for example `pkg.mod.func(arg) -> str`) gets a check that imports it from exactly that location and calls it as the spec describes. A builder who nests it in a factory or renames it must fail this check.
 - Assert the exact outputs and exit codes the spec gives. Do not loosen an expectation to make it easier to pass.
 - Never skip a check, never mark one expected-to-fail, never write a check that cannot fail.
 - Do not invent behaviour the spec does not state. If the spec is silent, write no check for it.
